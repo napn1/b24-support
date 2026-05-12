@@ -283,94 +283,80 @@ async function handleFileSelect() {
 async function uploadAndSendFile(file) {
   // Конвертировать файл в base64
   const base64 = await fileToBase64(file);
+  const fileSize = formatFileSize(file.size);
+  const isImage = file.type.startsWith('image/');
 
-  // Загрузить на Диск Bitrix24 в корневую папку пользователя
+  // Шаг 1: получить список хранилищ (берём первое доступное)
+  const storages = await B24_API.call('disk.storage.getlist', {});
+  if (!storages || storages.length === 0) {
+    throw new Error('No disk storage available');
+  }
+
+  const storageId = storages[0].ID;
+
+  // Шаг 2: получить корневую папку хранилища
+  const rootFolder = await B24_API.call('disk.storage.getchildren', {
+    id: storageId,
+  });
+
+  // Шаг 3: найти или создать папку "Чат сопровождения"
+  let folderId = null;
+  if (rootFolder && rootFolder.length > 0) {
+    const chatFolder = rootFolder.find(f => f.NAME === 'Чат сопровождения');
+    if (chatFolder) {
+      folderId = chatFolder.ID;
+    }
+  }
+
+  if (!folderId) {
+    // Создать папку
+    const newFolder = await B24_API.call('disk.storage.addfolder', {
+      id: storageId,
+      data: { NAME: 'Чат сопровождения' },
+    });
+    folderId = newFolder ? newFolder.ID : null;
+  }
+
+  if (!folderId) {
+    throw new Error('Could not get folder ID');
+  }
+
+  // Шаг 4: загрузить файл в папку
   const uploadResult = await B24_API.call('disk.folder.uploadfile', {
-    id: 0, // 0 = корневая папка диска
+    id: folderId,
     data: { NAME: file.name },
     fileContent: base64,
   });
 
-  let fileUrl = null;
-  let fileId = null;
-
-  if (uploadResult && uploadResult.DOWNLOAD_URL) {
-    fileUrl = uploadResult.DOWNLOAD_URL;
-    fileId = uploadResult.ID;
-  } else if (uploadResult && uploadResult.id) {
-    // Попробовать получить ссылку через disk.file.get
-    const fileInfo = await B24_API.call('disk.file.get', { id: uploadResult.id });
-    if (fileInfo) {
-      fileUrl = fileInfo.DOWNLOAD_URL;
-      fileId = fileInfo.ID;
-    }
+  if (!uploadResult || !uploadResult.DOWNLOAD_URL) {
+    throw new Error('Could not get file URL');
   }
 
-  if (!fileUrl) {
-    // Fallback: отправить файл напрямую через im.disk.file.commit
-    const commitResult = await B24_API.call('im.disk.file.commit', {
-      CHAT_ID: chatId,
-      UPLOAD_ID: fileId,
-    });
-    if (!commitResult) {
-      throw new Error('Could not get file URL');
-    }
-    return;
-  }
+  const fileUrl = uploadResult.DOWNLOAD_URL;
 
-  // Отправить сообщение со ссылкой на файл
-  const isImage = file.type.startsWith('image/');
-  const fileSize = formatFileSize(file.size);
+  // Шаг 5: отправить сообщение со ссылкой
+  const msgText = isImage
+    ? `[${session.name}]: 🖼 ${file.name} (${fileSize})`
+    : `[${session.name}]: 📎 ${file.name} (${fileSize})`;
 
-  let messageText;
-  if (isImage) {
-    // Для картинок — отправляем как вложение через im.message.add с ATTACH
-    const attachResult = await B24_API.call('im.message.add', {
-      DIALOG_ID: `chat${chatId}`,
-      MESSAGE: `[${session.name}]: 📎 ${file.name} (${fileSize})`,
-      ATTACH: [{
-        TYPE: 'IMAGE',
-        NAME: file.name,
-        LINK: fileUrl,
-        PREVIEW: fileUrl,
-        WIDTH: 200,
-        HEIGHT: 200,
-      }],
+  const msgResult = await B24_API.call('im.message.add', {
+    DIALOG_ID: `chat${chatId}`,
+    MESSAGE: `[${session.name}]: [url=${fileUrl}]${isImage ? '🖼' : '📎'} ${file.name}[/url] (${fileSize})`,
+  });
+
+  if (msgResult) {
+    appendMessage({
+      id: msgResult,
+      author_id: 'client',
+      text: msgText,
+      date: new Date().toISOString(),
+      fileUrl,
+      fileName: file.name,
+      fileType: file.type,
+      fileSize,
     });
-    if (attachResult) {
-      appendMessage({
-        id: attachResult,
-        author_id: 'client',
-        text: `[${session.name}]: 📎 ${file.name} (${fileSize})`,
-        date: new Date().toISOString(),
-        fileUrl,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize,
-      });
-      lastMessageId = Math.max(lastMessageId, parseInt(attachResult) || lastMessageId);
-      scrollToBottom();
-    }
-  } else {
-    // Для документов — ссылка в тексте
-    const msgResult = await B24_API.call('im.message.add', {
-      DIALOG_ID: `chat${chatId}`,
-      MESSAGE: `[${session.name}]: 📎 [url=${fileUrl}]${file.name}[/url] (${fileSize})`,
-    });
-    if (msgResult) {
-      appendMessage({
-        id: msgResult,
-        author_id: 'client',
-        text: `[${session.name}]: 📎 ${file.name} (${fileSize})`,
-        date: new Date().toISOString(),
-        fileUrl,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize,
-      });
-      lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
-      scrollToBottom();
-    }
+    lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
+    scrollToBottom();
   }
 }
 
