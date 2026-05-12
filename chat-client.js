@@ -175,19 +175,22 @@ function appendMessage(msg) {
 // ─── POLLING ────────────────────────────────────────────────
 
 function startPolling() {
+  if (pollingInterval) clearInterval(pollingInterval);
+
   pollingInterval = setInterval(async () => {
     if (!chatId) return;
 
-    const result = await B24_API.getChatMessages(chatId, lastMessageId);
+    const result = await B24_API.getChatMessages(chatId);
     if (!result || !result.messages) return;
 
-    const messages = Object.values(result.messages).sort((a, b) => a.id - b.id);
+    const messages = Object.values(result.messages).sort((a, b) => parseInt(a.id) - parseInt(b.id));
     let hasNew = false;
 
     messages.forEach(msg => {
-      if (parseInt(msg.id) > lastMessageId) {
+      const id = parseInt(msg.id);
+      if (id > lastMessageId) {
         appendMessage(msg);
-        lastMessageId = parseInt(msg.id);
+        lastMessageId = id;
         hasNew = true;
       }
     });

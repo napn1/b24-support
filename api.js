@@ -88,17 +88,12 @@ const B24_API = {
   },
 
   // Получить историю сообщений чата
-  // LAST_ID=0 → последние LIMIT сообщений
-  // LAST_ID=N → сообщения НОВЕЕ чем N
-  async getChatMessages(chatId, lastId = 0) {
-    const params = {
+  // Всегда запрашиваем последние 100 сообщений и фильтруем новые по ID на клиенте
+  async getChatMessages(chatId) {
+    return await this.call('im.dialog.messages.get', {
       DIALOG_ID: `chat${chatId}`,
       LIMIT: 100,
-    };
-    if (lastId > 0) {
-      params.LAST_ID = lastId;
-    }
-    return await this.call('im.dialog.messages.get', params);
+    });
   },
 
   // Отправить сообщение в чат
