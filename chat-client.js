@@ -170,10 +170,7 @@ function appendMessage(msg) {
 
   div.className = `message ${side}`;
 
-  // Проверить есть ли вложение файла (из локального добавления)
-  const fileHtml = msg.fileUrl ? renderFileAttachment(msg.fileUrl, msg.fileName, msg.fileType, msg.fileSize) : '';
-
-  // Парсить URL из текста сообщения (формат: "🖼 filename.jpg (10 КБ) — https://...")
+  // Парсить URL из текста ДО escapeHtml
   let inlineFileHtml = '';
   const urlMatch = text.match(/—\s*(https:\/\/raw\.githubusercontent\.com\/[^\s]+)/);
   if (urlMatch) {
@@ -191,6 +188,9 @@ function appendMessage(msg) {
           <div style="font-size:13px;">Скачать файл</div>
         </div>`;
   }
+
+  // Проверить есть ли вложение файла (из локального добавления)
+  const fileHtml = msg.fileUrl ? renderFileAttachment(msg.fileUrl, msg.fileName, msg.fileType, msg.fileSize) : '';
 
   div.innerHTML = `
     ${authorName ? `<div class="message-author">${escapeHtml(authorName)}</div>` : ''}
