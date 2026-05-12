@@ -173,9 +173,26 @@ function appendMessage(msg) {
   // Проверить есть ли вложение файла (из локального добавления)
   const fileHtml = msg.fileUrl ? renderFileAttachment(msg.fileUrl, msg.fileName, msg.fileType, msg.fileSize) : '';
 
+  // Проверить есть ли IMG ключ в тексте
+  const imgKeyMatch = text.match(/\[IMG:([^\]]+)\]/);
+  let imgHtml = '';
+  if (imgKeyMatch) {
+    text = text.replace(imgKeyMatch[0], '').trim();
+    const dataUrl = localStorage.getItem(imgKeyMatch[1]);
+    if (dataUrl) {
+      imgHtml = `<div style="margin-top:4px;">
+        <img src="${dataUrl}"
+          style="max-width:220px; max-height:180px; border-radius:8px; cursor:pointer; display:block;"
+          onclick="window.open(this.src,'_blank')"
+        />
+      </div>`;
+    }
+  }
+
   div.innerHTML = `
     ${authorName ? `<div class="message-author">${escapeHtml(authorName)}</div>` : ''}
     <div class="message-text">${escapeHtml(text)}</div>
+    ${imgHtml}
     ${fileHtml}
     <div class="message-time">${formatTime(msg.date)}</div>
   `;
@@ -281,83 +298,109 @@ async function handleFileSelect() {
 }
 
 async function uploadAndSendFile(file) {
-  // Конвертировать файл в base64
   const base64 = await fileToBase64(file);
   const fileSize = formatFileSize(file.size);
   const isImage = file.type.startsWith('image/');
+  const dataUrl = `data:${file.type};base64,${base64}`;
 
-  // Шаг 1: получить список хранилищ (берём первое доступное)
-  const storages = await B24_API.call('disk.storage.getlist', {});
-  if (!storages || storages.length === 0) {
-    throw new Error('No disk storage available');
-  }
+  if (isImage) {
+    // Картинки — встраиваем base64 прямо в сообщение
+    // Bitrix24 не поддерживает data URL в тексте, поэтому
+    // сохраняем в localStorage и показываем локально,
+    // а в чат отправляем метку [IMG:ключ]
+    const imgKey = `img_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
+    try { localStorage.setItem(imgKey, dataUrl); } catch(e) {}
 
-  const storageId = storages[0].ID;
+    const msgResult = await B24_API.sendMessage(chatId,
+      `📎 ${file.name} (${fileSize}) [IMG:${imgKey}]`,
+      session.name
+    );
 
-  // Шаг 2: получить корневую папку хранилища
-  const rootFolder = await B24_API.call('disk.storage.getchildren', {
-    id: storageId,
-  });
+    if (msgResult) {
+      // Показать картинку локально сразу
+      appendMessageWithImage({
+        id: msgResult,
+        author_id: 'client',
+        text: `[${session.name}]: 🖼 ${file.name} (${fileSize})`,
+        date: new Date().toISOString(),
+        dataUrl,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize,
+      });
+      lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
+      scrollToBottom();
+    }
+  } else {
+    // Документы — загружаем на Disk и отправляем ссылку
+    const storages = await B24_API.call('disk.storage.getlist', {});
+    if (!storages || storages.length === 0) throw new Error('No disk storage available');
+    const storageId = storages[0].ID;
 
-  // Шаг 3: найти или создать папку "Чат сопровождения"
-  let folderId = null;
-  if (rootFolder && rootFolder.length > 0) {
-    const chatFolder = rootFolder.find(f => f.NAME === 'Чат сопровождения');
-    if (chatFolder) {
-      folderId = chatFolder.ID;
+    const rootFolder = await B24_API.call('disk.storage.getchildren', { id: storageId });
+    let folderId = null;
+    if (rootFolder) {
+      const chatFolder = rootFolder.find(f => f.NAME === 'Чат сопровождения');
+      if (chatFolder) folderId = chatFolder.ID;
+    }
+    if (!folderId) {
+      const nf = await B24_API.call('disk.storage.addfolder', {
+        id: storageId, data: { NAME: 'Чат сопровождения' },
+      });
+      folderId = nf ? nf.ID : null;
+    }
+    if (!folderId) throw new Error('Could not get folder ID');
+
+    const uploadResult = await B24_API.call('disk.folder.uploadfile', {
+      id: folderId,
+      data: { NAME: file.name },
+      fileContent: base64,
+    });
+    if (!uploadResult || !uploadResult.DOWNLOAD_URL) throw new Error('Could not get file URL');
+
+    const fileUrl = uploadResult.DOWNLOAD_URL;
+    const msgResult = await B24_API.call('im.message.add', {
+      DIALOG_ID: `chat${chatId}`,
+      MESSAGE: `[${session.name}]: [url=${fileUrl}]📎 ${file.name}[/url] (${fileSize})`,
+    });
+
+    if (msgResult) {
+      appendMessage({
+        id: msgResult,
+        author_id: 'client',
+        text: `[${session.name}]: 📎 ${file.name} (${fileSize})`,
+        date: new Date().toISOString(),
+        fileUrl,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize,
+      });
+      lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
+      scrollToBottom();
     }
   }
+}
 
-  if (!folderId) {
-    // Создать папку
-    const newFolder = await B24_API.call('disk.storage.addfolder', {
-      id: storageId,
-      data: { NAME: 'Чат сопровождения' },
-    });
-    folderId = newFolder ? newFolder.ID : null;
-  }
+function appendMessageWithImage(msg) {
+  const container = document.getElementById('chatMessages');
+  if (document.querySelector(`[data-msg-id="${msg.id}"]`)) return;
 
-  if (!folderId) {
-    throw new Error('Could not get folder ID');
-  }
+  const div = document.createElement('div');
+  div.setAttribute('data-msg-id', msg.id);
+  div.className = 'message client';
 
-  // Шаг 4: загрузить файл в папку
-  const uploadResult = await B24_API.call('disk.folder.uploadfile', {
-    id: folderId,
-    data: { NAME: file.name },
-    fileContent: base64,
-  });
-
-  if (!uploadResult || !uploadResult.DOWNLOAD_URL) {
-    throw new Error('Could not get file URL');
-  }
-
-  const fileUrl = uploadResult.DOWNLOAD_URL;
-
-  // Шаг 5: отправить сообщение со ссылкой
-  const msgText = isImage
-    ? `[${session.name}]: 🖼 ${file.name} (${fileSize})`
-    : `[${session.name}]: 📎 ${file.name} (${fileSize})`;
-
-  const msgResult = await B24_API.call('im.message.add', {
-    DIALOG_ID: `chat${chatId}`,
-    MESSAGE: `[${session.name}]: [url=${fileUrl}]${isImage ? '🖼' : '📎'} ${file.name}[/url] (${fileSize})`,
-  });
-
-  if (msgResult) {
-    appendMessage({
-      id: msgResult,
-      author_id: 'client',
-      text: msgText,
-      date: new Date().toISOString(),
-      fileUrl,
-      fileName: file.name,
-      fileType: file.type,
-      fileSize,
-    });
-    lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
-    scrollToBottom();
-  }
+  div.innerHTML = `
+    <div class="message-author">${escapeHtml(session.name)}</div>
+    <div style="margin-top:4px;">
+      <img src="${msg.dataUrl}"
+        style="max-width:220px; max-height:180px; border-radius:8px; cursor:pointer; display:block;"
+        onclick="window.open(this.src,'_blank')"
+      />
+      <div style="font-size:11px; margin-top:3px; opacity:0.8;">${escapeHtml(msg.fileName)} (${msg.fileSize})</div>
+    </div>
+    <div class="message-time">${formatTime(msg.date)}</div>
+  `;
+  container.appendChild(div);
 }
 
 function fileToBase64(file) {
