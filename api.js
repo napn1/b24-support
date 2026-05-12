@@ -88,26 +88,28 @@ const B24_API = {
   },
 
   // Получить историю сообщений чата
+  // LAST_ID=0 → последние LIMIT сообщений
+  // LAST_ID=N → сообщения НОВЕЕ чем N
   async getChatMessages(chatId, lastId = 0) {
-    const result = await this.call('im.dialog.messages.get', {
+    const params = {
       DIALOG_ID: `chat${chatId}`,
-      LAST_ID: lastId,
       LIMIT: 100,
-    });
-    console.log('[getChatMessages] chatId:', chatId, 'lastId:', lastId, 'result:', result);
-    return result;
+    };
+    if (lastId > 0) {
+      params.LAST_ID = lastId;
+    }
+    return await this.call('im.dialog.messages.get', params);
   },
 
   // Отправить сообщение в чат
-  // fromName используется как префикс в тексте — единственный способ
-  // идентифицировать отправителя когда все шлют через один вебхук
+  // fromName сохраняется как префикс [Имя]: — единственный способ
+  // идентифицировать отправителя через один вебхук
   async sendMessage(chatId, text, fromName = 'Клиент') {
-    const result = await this.call('im.message.add', {
+    return await this.call('im.message.add', {
       DIALOG_ID: `chat${chatId}`,
       MESSAGE: `[${fromName}]: ${text}`,
     });
-    console.log('[sendMessage] result:', result, 'text:', text);
-    return result;
+  },
   },
 
   // Добавить пользователя (специалиста) в чат
