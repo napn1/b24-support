@@ -188,21 +188,14 @@ function startPolling() {
     if (!chatId) return;
 
     const result = await B24_API.getChatMessages(chatId);
-    if (!result || !result.messages) {
-      console.log('[polling] no messages returned');
-      return;
-    }
+    if (!result || !result.messages) return;
 
     const messages = Object.values(result.messages).sort((a, b) => parseInt(a.id) - parseInt(b.id));
-    const maxId = messages.length ? parseInt(messages[messages.length - 1].id) : 0;
-    console.log('[polling] got', messages.length, 'msgs, maxId:', maxId, 'lastMessageId:', lastMessageId);
-
     let hasNew = false;
 
     messages.forEach(msg => {
       const id = parseInt(msg.id);
       if (id > lastMessageId) {
-        console.log('[polling] NEW msg id:', id, 'text:', msg.text?.substring(0, 30));
         appendMessage(msg);
         lastMessageId = id;
         hasNew = true;
