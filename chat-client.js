@@ -170,13 +170,38 @@ function appendMessage(msg) {
 
   div.className = `message ${side}`;
 
+  // Проверить есть ли вложение файла (из локального добавления)
+  const fileHtml = msg.fileUrl ? renderFileAttachment(msg.fileUrl, msg.fileName, msg.fileType, msg.fileSize) : '';
+
   div.innerHTML = `
     ${authorName ? `<div class="message-author">${escapeHtml(authorName)}</div>` : ''}
     <div class="message-text">${escapeHtml(text)}</div>
+    ${fileHtml}
     <div class="message-time">${formatTime(msg.date)}</div>
   `;
 
   container.appendChild(div);
+}
+
+function renderFileAttachment(url, name, type, size) {
+  if (type && type.startsWith('image/')) {
+    return `<div style="margin-top:6px;">
+      <img src="${url}" alt="${escapeHtml(name)}"
+        style="max-width:220px; max-height:180px; border-radius:8px; cursor:pointer; display:block;"
+        onclick="window.open('${url}','_blank')"
+        onerror="this.style.display='none'"
+      />
+    </div>`;
+  }
+  return `<div style="margin-top:6px; display:flex; align-items:center; gap:8px;
+    background:rgba(0,0,0,0.2); border-radius:8px; padding:8px 10px; cursor:pointer;"
+    onclick="window.open('${url}','_blank')">
+    <span style="font-size:18px;">📄</span>
+    <div>
+      <div style="font-size:13px; font-weight:500;">${escapeHtml(name)}</div>
+      ${size ? `<div style="font-size:11px; opacity:0.7;">${size}</div>` : ''}
+    </div>
+  </div>`;
 }
 
 // ─── POLLING ────────────────────────────────────────────────
@@ -223,21 +248,149 @@ async function handleFileSelect() {
 
   // Проверка размера
   if (file.size > B24_CONFIG.MAX_FILE_SIZE) {
-    alert('Файл слишком большой. Максимум 3 МБ.');
+    alert(`Файл слишком большой. Максимум ${B24_CONFIG.MAX_FILE_SIZE / 1024 / 1024} МБ.`);
+    input.value = '';
     return;
   }
 
   // Проверка типа
   if (!B24_CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
     alert('Этот тип файла не поддерживается.');
+    input.value = '';
     return;
   }
 
-  // TODO: загрузка файла на Диск через REST API
-  // Пока заглушка
-  alert('Загрузка файлов будет реализована в следующей версии');
+  // Показать индикатор загрузки
+  const btn = document.getElementById('btnSend');
+  const attachBtn = document.querySelector('.btn-attach');
+  attachBtn.disabled = true;
+  attachBtn.innerHTML = '<span style="font-size:11px;">...</span>';
 
+  try {
+    await uploadAndSendFile(file);
+  } catch (e) {
+    console.error('File upload error:', e);
+    alert('Ошибка при загрузке файла');
+  }
+
+  attachBtn.disabled = false;
+  attachBtn.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
+  </svg>`;
   input.value = '';
+}
+
+async function uploadAndSendFile(file) {
+  // Конвертировать файл в base64
+  const base64 = await fileToBase64(file);
+
+  // Загрузить на Диск Bitrix24 в корневую папку пользователя
+  const uploadResult = await B24_API.call('disk.folder.uploadfile', {
+    id: 0, // 0 = корневая папка диска
+    data: { NAME: file.name },
+    fileContent: base64,
+  });
+
+  let fileUrl = null;
+  let fileId = null;
+
+  if (uploadResult && uploadResult.DOWNLOAD_URL) {
+    fileUrl = uploadResult.DOWNLOAD_URL;
+    fileId = uploadResult.ID;
+  } else if (uploadResult && uploadResult.id) {
+    // Попробовать получить ссылку через disk.file.get
+    const fileInfo = await B24_API.call('disk.file.get', { id: uploadResult.id });
+    if (fileInfo) {
+      fileUrl = fileInfo.DOWNLOAD_URL;
+      fileId = fileInfo.ID;
+    }
+  }
+
+  if (!fileUrl) {
+    // Fallback: отправить файл напрямую через im.disk.file.commit
+    const commitResult = await B24_API.call('im.disk.file.commit', {
+      CHAT_ID: chatId,
+      UPLOAD_ID: fileId,
+    });
+    if (!commitResult) {
+      throw new Error('Could not get file URL');
+    }
+    return;
+  }
+
+  // Отправить сообщение со ссылкой на файл
+  const isImage = file.type.startsWith('image/');
+  const fileSize = formatFileSize(file.size);
+
+  let messageText;
+  if (isImage) {
+    // Для картинок — отправляем как вложение через im.message.add с ATTACH
+    const attachResult = await B24_API.call('im.message.add', {
+      DIALOG_ID: `chat${chatId}`,
+      MESSAGE: `[${session.name}]: 📎 ${file.name} (${fileSize})`,
+      ATTACH: [{
+        TYPE: 'IMAGE',
+        NAME: file.name,
+        LINK: fileUrl,
+        PREVIEW: fileUrl,
+        WIDTH: 200,
+        HEIGHT: 200,
+      }],
+    });
+    if (attachResult) {
+      appendMessage({
+        id: attachResult,
+        author_id: 'client',
+        text: `[${session.name}]: 📎 ${file.name} (${fileSize})`,
+        date: new Date().toISOString(),
+        fileUrl,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize,
+      });
+      lastMessageId = Math.max(lastMessageId, parseInt(attachResult) || lastMessageId);
+      scrollToBottom();
+    }
+  } else {
+    // Для документов — ссылка в тексте
+    const msgResult = await B24_API.call('im.message.add', {
+      DIALOG_ID: `chat${chatId}`,
+      MESSAGE: `[${session.name}]: 📎 [url=${fileUrl}]${file.name}[/url] (${fileSize})`,
+    });
+    if (msgResult) {
+      appendMessage({
+        id: msgResult,
+        author_id: 'client',
+        text: `[${session.name}]: 📎 ${file.name} (${fileSize})`,
+        date: new Date().toISOString(),
+        fileUrl,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize,
+      });
+      lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
+      scrollToBottom();
+    }
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      // Убрать префикс "data:...;base64,"
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' Б';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
+  return (bytes / 1024 / 1024).toFixed(1) + ' МБ';
 }
 
 // ─── SUBSCRIPTION ───────────────────────────────────────────
