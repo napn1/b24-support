@@ -77,14 +77,13 @@ async function initChat() {
 async function loadMessages() {
   if (!chatId) return;
 
-  const result = await B24_API.getChatMessages(chatId, 0);
+  const result = await B24_API.getChatMessages(chatId);
   if (!result || !result.messages) return;
 
   const container = document.getElementById('chatMessages');
   container.innerHTML = '';
   lastMessageId = 0;
 
-  // im.dialog.messages.get возвращает объект, сортируем по id
   const messages = Object.values(result.messages).sort((a, b) => parseInt(a.id) - parseInt(b.id));
 
   messages.forEach(msg => {
@@ -94,7 +93,6 @@ async function loadMessages() {
   });
 
   scrollToBottom();
-  console.log('[loadMessages] loaded', messages.length, 'msgs, lastId:', lastMessageId);
 }
 
 async function sendMessage() {
@@ -152,8 +150,9 @@ function appendMessage(msg) {
   // Определить сторону: клиент — если имя совпадает с нашим
   const isClient = authorName === session.name;
 
-  // Системные сообщения
-  const isSystem = !msg.author_id || msg.author_id == 0;
+  // Системные сообщения — только те у которых нет author_id И нет префикса
+  // Сообщения от специалиста могут не иметь префикса но иметь author_id
+  const isSystem = (!msg.author_id || msg.author_id == 0) && !authorName;
   if (isSystem) {
     div.className = 'message system';
     div.innerHTML = `<div style="color:#666; font-size:12px; text-align:center; padding:4px 0;">${escapeHtml(text)}</div>`;
@@ -161,7 +160,15 @@ function appendMessage(msg) {
     return;
   }
 
-  div.className = `message ${isClient ? 'client' : 'specialist'}`;
+  // Если нет префикса но есть author_id — это сообщение от специалиста/админа
+  // отправленное напрямую через Bitrix24 (не через наш вебхук)
+  const side = isClient ? 'client' : 'specialist';
+  // Если нет имени автора — показываем "Специалист"
+  if (!authorName && !isClient) {
+    authorName = 'Специалист';
+  }
+
+  div.className = `message ${side}`;
 
   div.innerHTML = `
     ${authorName ? `<div class="message-author">${escapeHtml(authorName)}</div>` : ''}
