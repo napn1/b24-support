@@ -76,7 +76,7 @@ const B24_AUTH = {
 
   // Генерация случайного пароля (для руководителя при создании клиента)
   generatePassword(length = 10) {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789';
     let password = '';
     const array = new Uint8Array(length);
     crypto.getRandomValues(array);

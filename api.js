@@ -1,23 +1,25 @@
 // ============================================================
 // API — обёртка над Bitrix24 REST API
+// Все запросы идут через PHP прокси — вебхук скрыт от клиента
 // ============================================================
 
 const B24_API = {
 
-  // Базовый запрос к REST API
-  // Поддерживает два режима:
-  //   1. Вебхук (WEBHOOK_URL задан) — для клиентского чата и прямого открытия
-  //   2. OAuth токен (AUTH_TOKEN задан) — для Local App внутри Bitrix24
+  // Базовый запрос к REST API через прокси
   async call(method, params = {}) {
     let url;
     let body;
 
     if (B24_CONFIG.AUTH_TOKEN) {
-      // OAuth режим — используем токен
+      // OAuth режим (Local App внутри Bitrix24) — напрямую с токеном
       url = `${B24_CONFIG.PORTAL_DOMAIN}/rest/${method}`;
       body = JSON.stringify({ ...params, auth: B24_CONFIG.AUTH_TOKEN });
+    } else if (B24_CONFIG.PROXY_URL) {
+      // Прокси режим — токен скрыт на сервере
+      url = B24_CONFIG.PROXY_URL;
+      body = JSON.stringify({ method, params });
     } else {
-      // Вебхук режим
+      // Fallback: прямой вебхук (только для разработки)
       url = B24_CONFIG.WEBHOOK_URL + method;
       body = JSON.stringify(params);
     }
@@ -30,7 +32,6 @@ const B24_API = {
       });
       const data = await response.json();
       if (data.error) {
-        // При превышении лимита — подождать и вернуть null (polling попробует снова)
         if (data.error === 'QUERY_LIMIT_EXCEEDED') {
           await new Promise(r => setTimeout(r, 2000));
           return null;
