@@ -4,8 +4,8 @@
 // ============================================================
 
 const B24_CONFIG = {
-  // PHP прокси на InfinityFree — скрывает вебхук от клиента
-  PROXY_URL: 'https://sotisgroup.page.gd/proxy.php',
+  // Cloudflare Worker прокси — скрывает вебхук от клиента
+  PROXY_URL: 'https://green-tooth-89e0.chuckychug.workers.dev/',
 
   // Вебхук не используется на клиентском сайте
   WEBHOOK_URL: null,
