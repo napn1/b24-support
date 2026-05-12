@@ -110,7 +110,6 @@ const B24_API = {
       MESSAGE: `[${fromName}]: ${text}`,
     });
   },
-  },
 
   // Добавить пользователя (специалиста) в чат
   async addUserToChat(chatId, userId) {
