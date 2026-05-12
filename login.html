@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Вход — Портал сопровождения</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0e0e0e;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-wrap {
+      width: 100%;
+      max-width: 380px;
+      padding: 16px;
+    }
+
+    .login-logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .login-logo svg {
+      width: 48px;
+      height: 48px;
+      fill: #5b9cf6;
+    }
+
+    .login-logo h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 12px;
+    }
+
+    .login-logo p {
+      font-size: 13px;
+      color: #888;
+      margin-top: 4px;
+    }
+
+    .login-card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 28px 24px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      color: #aaa;
+      margin-bottom: 6px;
+    }
+
+    .form-group input {
+      width: 100%;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 11px 14px;
+      font-size: 15px;
+      color: #e0e0e0;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus {
+      border-color: #5b9cf6;
+    }
+
+    .form-group input::placeholder {
+      color: #555;
+    }
+
+    .btn-login {
+      width: 100%;
+      background: #5b9cf6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+
+    .btn-login:hover { background: #4a8de0; }
+    .btn-login:disabled { background: #2a4a7a; cursor: not-allowed; }
+
+    .error-msg {
+      background: #2a1515;
+      border: 1px solid #5a2020;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #f87171;
+      margin-top: 14px;
+      display: none;
+    }
+
+    .error-msg.visible { display: block; }
+
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-logo">
+      <!-- Иконка чата -->
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 2H4C2.9 2 2 2.9 2 4v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/>
+      </svg>
+      <h1>Портал сопровождения</h1>
+      <p>Войдите чтобы продолжить</p>
+    </div>
+
+    <div class="login-card">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input
+          type="email"
+          id="email"
+          placeholder="your@email.com"
+          autocomplete="email"
+          autofocus
+        />
+      </div>
+      <div class="form-group">
+        <label for="password">Пароль</label>
+        <input
+          type="password"
+          id="password"
+          placeholder="••••••••••"
+          autocomplete="current-password"
+        />
+      </div>
+      <button class="btn-login" id="btnLogin" onclick="doLogin()">Войти</button>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="api.js"></script>
+  <script src="auth.js"></script>
+  <script>
+    // Если уже авторизован — редирект на чат
+    if (B24_AUTH.getSession()) {
+      window.location.href = 'chat.html';
+    }
+
+    // Войти по Enter
+    document.getElementById('password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLogin();
+    });
+    document.getElementById('email').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('password').focus();
+    });
+
+    async function doLogin() {
+      const email    = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const btn      = document.getElementById('btnLogin');
+      const errEl    = document.getElementById('errorMsg');
+
+      errEl.classList.remove('visible');
+
+      if (!email || !password) {
+        showError('Введите email и пароль');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Вход...';
+
+      const result = await B24_AUTH.login(email, password);
+
+      if (result.success) {
+        window.location.href = 'chat.html';
+      } else {
+        showError(result.error || 'Ошибка входа');
+        btn.disabled = false;
+        btn.textContent = 'Войти';
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('errorMsg');
+      el.textContent = msg;
+      el.classList.add('visible');
+    }
+  </script>
+</body>
+</html>

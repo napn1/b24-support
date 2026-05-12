@@ -1,0 +1,290 @@
+// ============================================================
+// CHAT CLIENT — логика клиентского чата
+// ============================================================
+
+let session = null;
+let chatId = null;
+let lastMessageId = 0;
+let pollingInterval = null;
+
+// ─── INIT ───────────────────────────────────────────────────
+
+async function init() {
+  session = B24_AUTH.requireAuth();
+  if (!session) return;
+
+  // Отобразить данные пользователя
+  document.getElementById('userName').textContent = session.name;
+  document.getElementById('companyName').textContent = session.companyName || 'Компания';
+  
+  const avatar = session.companyName ? session.companyName.charAt(0).toUpperCase() : '?';
+  document.getElementById('companyAvatar').textContent = avatar;
+
+  // Обновить статус подписки
+  updateSubscriptionBadge();
+
+  // Получить или создать чат компании
+  await initChat();
+
+  // Загрузить историю
+  await loadMessages();
+
+  // Запустить polling
+  startPolling();
+
+  // Автоувеличение textarea
+  const input = document.getElementById('messageInput');
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  });
+
+  // Отправка по Enter (Shift+Enter = новая строка)
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+}
+
+// ─── CHAT ───────────────────────────────────────────────────
+
+async function initChat() {
+  if (!session.companyId) {
+    showError('Компания не привязана к вашему аккаунту');
+    return;
+  }
+
+  const chat = await B24_API.getOrCreateCompanyChat(
+    session.companyId,
+    session.companyName
+  );
+
+  if (!chat || !chat.ID) {
+    showError('Не удалось создать чат');
+    return;
+  }
+
+  chatId = chat.ID;
+
+  // Сохранить chatId в данных компании (для специалистов)
+  await B24_API.updateCompany(session.companyId, {
+    COMMENTS: `ChatID: ${chatId}`,
+  });
+}
+
+async function loadMessages() {
+  if (!chatId) return;
+
+  const result = await B24_API.getChatMessages(chatId, 0);
+  if (!result || !result.messages) return;
+
+  const container = document.getElementById('chatMessages');
+  container.innerHTML = '';
+
+  const messages = Object.values(result.messages).sort((a, b) => a.id - b.id);
+
+  messages.forEach(msg => {
+    appendMessage(msg);
+    lastMessageId = Math.max(lastMessageId, parseInt(msg.id));
+  });
+
+  scrollToBottom();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('messageInput');
+  const text = input.value.trim();
+  if (!text || !chatId) return;
+
+  const btn = document.getElementById('btnSend');
+  btn.disabled = true;
+
+  const result = await B24_API.sendMessage(chatId, text, session.name);
+
+  if (result) {
+    input.value = '';
+    input.style.height = 'auto';
+    await loadMessages(); // Перезагрузить чтобы увидеть своё сообщение
+  }
+
+  btn.disabled = false;
+  input.focus();
+}
+
+function appendMessage(msg) {
+  const container = document.getElementById('chatMessages');
+  const div = document.createElement('div');
+
+  // Определить кто отправил (клиент или специалист)
+  const isClient = msg.text && msg.text.startsWith(`[${session.name}]`);
+  div.className = `message ${isClient ? 'client' : 'specialist'}`;
+
+  // Убрать префикс [Имя]: если есть
+  let text = msg.text || '';
+  if (isClient) {
+    text = text.replace(`[${session.name}]: `, '');
+  }
+
+  div.innerHTML = `
+    <div>${escapeHtml(text)}</div>
+    <div class="message-time">${formatTime(msg.date)}</div>
+  `;
+
+  container.appendChild(div);
+}
+
+// ─── POLLING ────────────────────────────────────────────────
+
+function startPolling() {
+  pollingInterval = setInterval(async () => {
+    if (!chatId) return;
+
+    const result = await B24_API.getChatMessages(chatId, lastMessageId);
+    if (!result || !result.messages) return;
+
+    const messages = Object.values(result.messages).sort((a, b) => a.id - b.id);
+    let hasNew = false;
+
+    messages.forEach(msg => {
+      if (parseInt(msg.id) > lastMessageId) {
+        appendMessage(msg);
+        lastMessageId = parseInt(msg.id);
+        hasNew = true;
+      }
+    });
+
+    if (hasNew) {
+      scrollToBottom();
+      playNotificationSound();
+      flashTitle();
+    }
+  }, B24_CONFIG.POLLING_INTERVAL);
+}
+
+// ─── FILES ──────────────────────────────────────────────────
+
+function attachFile() {
+  document.getElementById('fileInput').click();
+}
+
+async function handleFileSelect() {
+  const input = document.getElementById('fileInput');
+  const file = input.files[0];
+  if (!file) return;
+
+  // Проверка размера
+  if (file.size > B24_CONFIG.MAX_FILE_SIZE) {
+    alert('Файл слишком большой. Максимум 3 МБ.');
+    return;
+  }
+
+  // Проверка типа
+  if (!B24_CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+    alert('Этот тип файла не поддерживается.');
+    return;
+  }
+
+  // TODO: загрузка файла на Диск через REST API
+  // Пока заглушка
+  alert('Загрузка файлов будет реализована в следующей версии');
+
+  input.value = '';
+}
+
+// ─── SUBSCRIPTION ───────────────────────────────────────────
+
+function updateSubscriptionBadge() {
+  if (!session.companyData) return;
+
+  const subEnd = session.companyData[B24_CONFIG.CRM_FIELDS.COMPANY.SUB_END];
+  if (!subEnd) {
+    document.getElementById('subBadge').textContent = 'Нет подписки';
+    document.getElementById('subBadge').className = 'subscription-badge expired';
+    return;
+  }
+
+  const endDate = new Date(subEnd);
+  const now = new Date();
+  const daysLeft = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
+
+  const badge = document.getElementById('subBadge');
+
+  if (daysLeft < 0) {
+    badge.textContent = 'Подписка истекла';
+    badge.className = 'subscription-badge expired';
+  } else if (daysLeft <= 7) {
+    badge.textContent = `Осталось ${daysLeft} дн.`;
+    badge.className = 'subscription-badge expiring';
+  } else {
+    badge.textContent = `Активна (${daysLeft} дн.)`;
+    badge.className = 'subscription-badge active';
+  }
+}
+
+// ─── UTILS ──────────────────────────────────────────────────
+
+function scrollToBottom() {
+  const container = document.getElementById('chatMessages');
+  container.scrollTop = container.scrollHeight;
+}
+
+function formatTime(dateStr) {
+  const date = new Date(dateStr);
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function showError(msg) {
+  const container = document.getElementById('chatMessages');
+  container.innerHTML = `<div class="loader" style="color: #f87171;">${msg}</div>`;
+}
+
+function playNotificationSound() {
+  // Простой beep через Web Audio API
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 800;
+    gain.gain.value = 0.1;
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    // Игнорируем если не поддерживается
+  }
+}
+
+let originalTitle = document.title;
+let titleFlashInterval = null;
+
+function flashTitle() {
+  if (titleFlashInterval) return; // Уже мигает
+
+  let toggle = false;
+  titleFlashInterval = setInterval(() => {
+    document.title = toggle ? originalTitle : '💬 Новое сообщение';
+    toggle = !toggle;
+  }, 1000);
+
+  // Остановить через 5 секунд
+  setTimeout(() => {
+    clearInterval(titleFlashInterval);
+    titleFlashInterval = null;
+    document.title = originalTitle;
+  }, 5000);
+}
+
+// ─── START ──────────────────────────────────────────────────
+
+init();
