@@ -30,6 +30,11 @@ const B24_API = {
       });
       const data = await response.json();
       if (data.error) {
+        // При превышении лимита — подождать и вернуть null (polling попробует снова)
+        if (data.error === 'QUERY_LIMIT_EXCEEDED') {
+          await new Promise(r => setTimeout(r, 2000));
+          return null;
+        }
         console.error(`B24 API error [${method}]:`, data.error, data.error_description);
         return null;
       }
@@ -164,20 +169,38 @@ const B24_API = {
   },
 
   // Получить список всех компаний (для руководителя)
+  // Загружает все страницы если компаний больше 50
   async getCompanies(filter = {}) {
-    return await this.call('crm.company.list', {
-      filter,
-      select: [
-        'ID', 'TITLE', 'COMMENTS',
-        B24_CONFIG.CRM_FIELDS.COMPANY.SUB_START,
-        B24_CONFIG.CRM_FIELDS.COMPANY.SUB_END,
-        B24_CONFIG.CRM_FIELDS.COMPANY.SUB_TYPE,
-        B24_CONFIG.CRM_FIELDS.COMPANY.HOURS_TOTAL,
-        B24_CONFIG.CRM_FIELDS.COMPANY.HOURS_USED,
-        B24_CONFIG.CRM_FIELDS.COMPANY.SUB_STATUS,
-        B24_CONFIG.CRM_FIELDS.COMPANY.SPECIALIST,
-      ],
-    });
+    const select = [
+      'ID', 'TITLE', 'COMMENTS',
+      B24_CONFIG.CRM_FIELDS.COMPANY.SUB_START,
+      B24_CONFIG.CRM_FIELDS.COMPANY.SUB_END,
+      B24_CONFIG.CRM_FIELDS.COMPANY.SUB_TYPE,
+      B24_CONFIG.CRM_FIELDS.COMPANY.HOURS_TOTAL,
+      B24_CONFIG.CRM_FIELDS.COMPANY.HOURS_USED,
+      B24_CONFIG.CRM_FIELDS.COMPANY.SUB_STATUS,
+      B24_CONFIG.CRM_FIELDS.COMPANY.SPECIALIST,
+    ];
+
+    let all = [];
+    let start = 0;
+
+    while (true) {
+      const result = await this.call('crm.company.list', {
+        filter,
+        select,
+        start,
+      });
+
+      if (!result || result.length === 0) break;
+      all = all.concat(result);
+
+      // Bitrix24 возвращает максимум 50 за раз
+      if (result.length < 50) break;
+      start += 50;
+    }
+
+    return all;
   },
 
   // Получить контакты компании
