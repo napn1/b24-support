@@ -48,6 +48,8 @@ const B24_AUTH = {
       companyData: company || null,
     };
     sessionStorage.setItem(this.SESSION_KEY, JSON.stringify(session));
+    // Также сохраняем в localStorage для постоянной сессии
+    localStorage.setItem(this.SESSION_KEY, JSON.stringify(session));
 
     return { success: true, session };
   },
@@ -55,12 +57,14 @@ const B24_AUTH = {
   // Выйти
   logout() {
     sessionStorage.removeItem(this.SESSION_KEY);
+    localStorage.removeItem(this.SESSION_KEY);
     window.location.href = 'login.html';
   },
 
-  // Получить текущую сессию
+  // Получить текущую сессию — сначала sessionStorage, потом localStorage
   getSession() {
-    const raw = sessionStorage.getItem(this.SESSION_KEY);
+    const raw = sessionStorage.getItem(this.SESSION_KEY)
+      || localStorage.getItem(this.SESSION_KEY);
     return raw ? JSON.parse(raw) : null;
   },
 
