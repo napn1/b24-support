@@ -106,7 +106,15 @@ async function sendMessage() {
   if (result) {
     input.value = '';
     input.style.height = 'auto';
-    await loadMessages(); // Перезагрузить чтобы увидеть своё сообщение
+    // Добавить своё сообщение сразу, не перезагружая весь чат
+    appendMessage({
+      id: result,
+      author_id: 'client',
+      text: `[${session.name}]: ${text}`,
+      date: new Date().toISOString(),
+    });
+    lastMessageId = Math.max(lastMessageId, parseInt(result) || lastMessageId);
+    scrollToBottom();
   }
 
   btn.disabled = false;
@@ -115,20 +123,45 @@ async function sendMessage() {
 
 function appendMessage(msg) {
   const container = document.getElementById('chatMessages');
+
+  // Не добавлять дубликаты
+  if (document.querySelector(`[data-msg-id="${msg.id}"]`)) return;
+
   const div = document.createElement('div');
+  div.setAttribute('data-msg-id', msg.id);
 
-  // Определить кто отправил (клиент или специалист)
-  const isClient = msg.text && msg.text.startsWith(`[${session.name}]`);
-  div.className = `message ${isClient ? 'client' : 'specialist'}`;
-
-  // Убрать префикс [Имя]: если есть
   let text = msg.text || '';
-  if (isClient) {
-    text = text.replace(`[${session.name}]: `, '');
+
+  // Убрать BB-коды Bitrix24
+  text = text.replace(/\[USER=\d+\s+REPLACE\](.*?)\[\/USER\]/gi, '$1');
+  text = text.replace(/\[USER=\d+\](.*?)\[\/USER\]/gi, '$1');
+  text = text.replace(/\[\/?(B|I|U|S|URL|IMG|CODE|QUOTE)[^\]]*\]/gi, '');
+
+  // Извлечь имя автора из префикса [Имя]: если есть
+  let authorName = '';
+  const prefixMatch = text.match(/^\[([^\]]+)\]:\s*/);
+  if (prefixMatch) {
+    authorName = prefixMatch[1];
+    text = text.replace(prefixMatch[0], '');
   }
 
+  // Определить сторону: клиент — если имя совпадает с нашим
+  const isClient = authorName === session.name;
+
+  // Системные сообщения
+  const isSystem = !msg.author_id || msg.author_id == 0;
+  if (isSystem) {
+    div.className = 'message system';
+    div.innerHTML = `<div style="color:#666; font-size:12px; text-align:center; padding:4px 0;">${escapeHtml(text)}</div>`;
+    container.appendChild(div);
+    return;
+  }
+
+  div.className = `message ${isClient ? 'client' : 'specialist'}`;
+
   div.innerHTML = `
-    <div>${escapeHtml(text)}</div>
+    ${authorName ? `<div class="message-author">${escapeHtml(authorName)}</div>` : ''}
+    <div class="message-text">${escapeHtml(text)}</div>
     <div class="message-time">${formatTime(msg.date)}</div>
   `;
 
