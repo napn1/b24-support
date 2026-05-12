@@ -173,26 +173,29 @@ function appendMessage(msg) {
   // Проверить есть ли вложение файла (из локального добавления)
   const fileHtml = msg.fileUrl ? renderFileAttachment(msg.fileUrl, msg.fileName, msg.fileType, msg.fileSize) : '';
 
-  // Проверить есть ли IMG ключ в тексте
-  const imgKeyMatch = text.match(/\[IMG:([^\]]+)\]/);
-  let imgHtml = '';
-  if (imgKeyMatch) {
-    text = text.replace(imgKeyMatch[0], '').trim();
-    const dataUrl = localStorage.getItem(imgKeyMatch[1]);
-    if (dataUrl) {
-      imgHtml = `<div style="margin-top:4px;">
-        <img src="${dataUrl}"
-          style="max-width:220px; max-height:180px; border-radius:8px; cursor:pointer; display:block;"
-          onclick="window.open(this.src,'_blank')"
-        />
-      </div>`;
-    }
+  // Парсить URL из текста сообщения (формат: "🖼 filename.jpg (10 КБ) — https://...")
+  let inlineFileHtml = '';
+  const urlMatch = text.match(/—\s*(https:\/\/raw\.githubusercontent\.com\/[^\s]+)/);
+  if (urlMatch) {
+    const url = urlMatch[1];
+    text = text.replace(urlMatch[0], '').trim();
+    const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+    inlineFileHtml = isImg
+      ? `<div style="margin-top:6px;"><img src="${url}"
+          style="max-width:220px;max-height:180px;border-radius:8px;cursor:pointer;display:block;"
+          onclick="window.open('${url}','_blank')" onerror="this.style.display='none'"/></div>`
+      : `<div style="margin-top:6px;display:flex;align-items:center;gap:8px;
+          background:rgba(0,0,0,0.2);border-radius:8px;padding:8px 10px;cursor:pointer;"
+          onclick="window.open('${url}','_blank')">
+          <span style="font-size:18px;">📄</span>
+          <div style="font-size:13px;">Скачать файл</div>
+        </div>`;
   }
 
   div.innerHTML = `
     ${authorName ? `<div class="message-author">${escapeHtml(authorName)}</div>` : ''}
     <div class="message-text">${escapeHtml(text)}</div>
-    ${imgHtml}
+    ${inlineFileHtml}
     ${fileHtml}
     <div class="message-time">${formatTime(msg.date)}</div>
   `;
@@ -301,106 +304,45 @@ async function uploadAndSendFile(file) {
   const base64 = await fileToBase64(file);
   const fileSize = formatFileSize(file.size);
   const isImage = file.type.startsWith('image/');
-  const dataUrl = `data:${file.type};base64,${base64}`;
 
-  if (isImage) {
-    // Картинки — встраиваем base64 прямо в сообщение
-    // Bitrix24 не поддерживает data URL в тексте, поэтому
-    // сохраняем в localStorage и показываем локально,
-    // а в чат отправляем метку [IMG:ключ]
-    const imgKey = `img_${Date.now()}_${Math.random().toString(36).substr(2,6)}`;
-    try { localStorage.setItem(imgKey, dataUrl); } catch(e) {}
+  // Загрузить файл на GitHub через Cloudflare Worker
+  const uploadResp = await fetch(B24_CONFIG.PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'upload',
+      fileName: file.name,
+      fileBase64: base64,
+    }),
+  });
 
-    const msgResult = await B24_API.sendMessage(chatId,
-      `📎 ${file.name} (${fileSize}) [IMG:${imgKey}]`,
-      session.name
-    );
-
-    if (msgResult) {
-      // Показать картинку локально сразу
-      appendMessageWithImage({
-        id: msgResult,
-        author_id: 'client',
-        text: `[${session.name}]: 🖼 ${file.name} (${fileSize})`,
-        date: new Date().toISOString(),
-        dataUrl,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize,
-      });
-      lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
-      scrollToBottom();
-    }
-  } else {
-    // Документы — загружаем на Disk и отправляем ссылку
-    const storages = await B24_API.call('disk.storage.getlist', {});
-    if (!storages || storages.length === 0) throw new Error('No disk storage available');
-    const storageId = storages[0].ID;
-
-    const rootFolder = await B24_API.call('disk.storage.getchildren', { id: storageId });
-    let folderId = null;
-    if (rootFolder) {
-      const chatFolder = rootFolder.find(f => f.NAME === 'Чат сопровождения');
-      if (chatFolder) folderId = chatFolder.ID;
-    }
-    if (!folderId) {
-      const nf = await B24_API.call('disk.storage.addfolder', {
-        id: storageId, data: { NAME: 'Чат сопровождения' },
-      });
-      folderId = nf ? nf.ID : null;
-    }
-    if (!folderId) throw new Error('Could not get folder ID');
-
-    const uploadResult = await B24_API.call('disk.folder.uploadfile', {
-      id: folderId,
-      data: { NAME: file.name },
-      fileContent: base64,
-    });
-    if (!uploadResult || !uploadResult.DOWNLOAD_URL) throw new Error('Could not get file URL');
-
-    const fileUrl = uploadResult.DOWNLOAD_URL;
-    const msgResult = await B24_API.call('im.message.add', {
-      DIALOG_ID: `chat${chatId}`,
-      MESSAGE: `[${session.name}]: [url=${fileUrl}]📎 ${file.name}[/url] (${fileSize})`,
-    });
-
-    if (msgResult) {
-      appendMessage({
-        id: msgResult,
-        author_id: 'client',
-        text: `[${session.name}]: 📎 ${file.name} (${fileSize})`,
-        date: new Date().toISOString(),
-        fileUrl,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize,
-      });
-      lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
-      scrollToBottom();
-    }
+  const uploadData = await uploadResp.json();
+  if (!uploadData.ok || !uploadData.url) {
+    throw new Error('Не удалось загрузить файл: ' + JSON.stringify(uploadData));
   }
-}
 
-function appendMessageWithImage(msg) {
-  const container = document.getElementById('chatMessages');
-  if (document.querySelector(`[data-msg-id="${msg.id}"]`)) return;
+  const fileUrl = uploadData.url;
 
-  const div = document.createElement('div');
-  div.setAttribute('data-msg-id', msg.id);
-  div.className = 'message client';
+  // Отправить сообщение со ссылкой
+  const msgResult = await B24_API.sendMessage(chatId,
+    `${isImage ? '🖼' : '📎'} ${file.name} (${fileSize}) — ${fileUrl}`,
+    session.name
+  );
 
-  div.innerHTML = `
-    <div class="message-author">${escapeHtml(session.name)}</div>
-    <div style="margin-top:4px;">
-      <img src="${msg.dataUrl}"
-        style="max-width:220px; max-height:180px; border-radius:8px; cursor:pointer; display:block;"
-        onclick="window.open(this.src,'_blank')"
-      />
-      <div style="font-size:11px; margin-top:3px; opacity:0.8;">${escapeHtml(msg.fileName)} (${msg.fileSize})</div>
-    </div>
-    <div class="message-time">${formatTime(msg.date)}</div>
-  `;
-  container.appendChild(div);
+  if (msgResult) {
+    appendMessage({
+      id: msgResult,
+      author_id: 'client',
+      text: `[${session.name}]: ${isImage ? '🖼' : '📎'} ${file.name} (${fileSize}) — ${fileUrl}`,
+      date: new Date().toISOString(),
+      fileUrl,
+      fileName: file.name,
+      fileType: file.type,
+      fileSize,
+    });
+    lastMessageId = Math.max(lastMessageId, parseInt(msgResult) || lastMessageId);
+    scrollToBottom();
+  }
 }
 
 function fileToBase64(file) {
