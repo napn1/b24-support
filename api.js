@@ -64,27 +64,27 @@ const B24_API = {
 
   // Получить или создать групповой чат для компании
   async getOrCreateCompanyChat(companyId, companyName) {
-    // Ищем существующий чат по названию (формат: "Компания: Название")
-    const chatTitle = `Компания: ${companyName}`;
-    
-    // Получаем список чатов
-    const chats = await this.call('im.chat.list', {
-      filter: { TITLE: chatTitle },
-    });
-    
-    if (chats && chats.length > 0) {
-      return chats[0];
+    // Сначала проверяем — есть ли уже сохранённый ChatID в комментариях компании
+    const companyData = await this.getCompany(companyId);
+    if (companyData && companyData.COMMENTS) {
+      const match = companyData.COMMENTS.match(/ChatID:\s*(\d+)/);
+      if (match) {
+        console.log('[getOrCreateCompanyChat] found existing chatId:', match[1]);
+        return { ID: parseInt(match[1]) };
+      }
     }
 
-    // Создаём новый групповой чат
-    const newChat = await this.call('im.chat.add', {
+    // Чата нет — создаём новый
+    const chatTitle = `Компания: ${companyName}`;
+    const newChatId = await this.call('im.chat.add', {
       TYPE: 'CHAT',
       TITLE: chatTitle,
       DESCRIPTION: `Чат сопровождения для компании ${companyName} (ID: ${companyId})`,
       MESSAGE: 'Чат создан. Здесь будут все обращения от клиента.',
     });
 
-    return newChat ? { ID: newChat } : null;
+    console.log('[getOrCreateCompanyChat] created new chat:', newChatId);
+    return newChatId ? { ID: newChatId } : null;
   },
 
   // Получить историю сообщений чата
@@ -92,17 +92,22 @@ const B24_API = {
     const result = await this.call('im.dialog.messages.get', {
       DIALOG_ID: `chat${chatId}`,
       LAST_ID: lastId,
-      LIMIT: 50,
+      LIMIT: 100,
     });
+    console.log('[getChatMessages] chatId:', chatId, 'lastId:', lastId, 'result:', result);
     return result;
   },
 
-  // Отправить сообщение в чат от имени системы (клиент)
+  // Отправить сообщение в чат
+  // fromName используется как префикс в тексте — единственный способ
+  // идентифицировать отправителя когда все шлют через один вебхук
   async sendMessage(chatId, text, fromName = 'Клиент') {
-    return await this.call('im.message.add', {
+    const result = await this.call('im.message.add', {
       DIALOG_ID: `chat${chatId}`,
       MESSAGE: `[${fromName}]: ${text}`,
     });
+    console.log('[sendMessage] result:', result, 'text:', text);
+    return result;
   },
 
   // Добавить пользователя (специалиста) в чат

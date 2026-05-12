@@ -15,7 +15,7 @@ async function init() {
 
   // Отобразить данные пользователя
   document.getElementById('userName').textContent = session.name;
-  document.getElementById('companyName').textContent = session.companyName || 'Компания';
+  document.getElementById('companyName').textContent = session.companyName;
   
   const avatar = session.companyName ? session.companyName.charAt(0).toUpperCase() : '?';
   document.getElementById('companyAvatar').textContent = avatar;
@@ -82,15 +82,19 @@ async function loadMessages() {
 
   const container = document.getElementById('chatMessages');
   container.innerHTML = '';
+  lastMessageId = 0;
 
-  const messages = Object.values(result.messages).sort((a, b) => a.id - b.id);
+  // im.dialog.messages.get возвращает объект, сортируем по id
+  const messages = Object.values(result.messages).sort((a, b) => parseInt(a.id) - parseInt(b.id));
 
   messages.forEach(msg => {
     appendMessage(msg);
-    lastMessageId = Math.max(lastMessageId, parseInt(msg.id));
+    const id = parseInt(msg.id);
+    if (id > lastMessageId) lastMessageId = id;
   });
 
   scrollToBottom();
+  console.log('[loadMessages] loaded', messages.length, 'msgs, lastId:', lastMessageId);
 }
 
 async function sendMessage() {
