@@ -106,8 +106,26 @@ const B24_API = {
   },
 
   // Получить историю сообщений чата
-  // Всегда запрашиваем последние 100 сообщений и фильтруем новые по ID на клиенте
+  // Сначала пробуем KV через Worker, fallback к Bitrix24 API
   async getChatMessages(chatId) {
+    try {
+      const resp = await fetch(B24_CONFIG.PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'getMessages', chatId }),
+      });
+      const data = await resp.json();
+      if (data.ok && data.messages) {
+        const count = Object.keys(data.messages).length;
+        if (count > 0) {
+          return { messages: data.messages };
+        }
+      }
+    } catch (e) {
+      console.warn('[getChatMessages] KV error, falling back:', e);
+    }
+
+    // Fallback: прямой запрос к Bitrix24
     return await this.call('im.dialog.messages.get', {
       DIALOG_ID: `chat${chatId}`,
       LIMIT: 100,
