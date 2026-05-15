@@ -213,12 +213,12 @@ function renderFileAttachment(url, name, type, size) {
       />
     </div>`;
   }
-  return `<div style="margin-top:6px; display:flex; align-items:center; gap:8px;
-    background:rgba(0,0,0,0.2); border-radius:8px; padding:8px 10px; cursor:pointer;"
+  return `<div style="margin-top:6px; display:flex; align-items:flex-start; gap:8px;
+    background:rgba(0,0,0,0.2); border-radius:8px; padding:8px 10px; cursor:pointer; min-width:0;"
     onclick="window.open('${url}','_blank')">
-    <span style="font-size:18px;">📄</span>
-    <div>
-      <div style="font-size:13px; font-weight:500;">${escapeHtml(name)}</div>
+    <span style="font-size:18px; flex-shrink:0;">📄</span>
+    <div style="min-width:0; overflow:hidden;">
+      <div style="font-size:13px; font-weight:500; word-break:break-all; overflow-wrap:break-word;">${escapeHtml(name)}</div>
       ${size ? `<div style="font-size:11px; opacity:0.7;">${size}</div>` : ''}
     </div>
   </div>`;
