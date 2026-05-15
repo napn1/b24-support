@@ -1,25 +1,25 @@
 // ============================================================
-// API вЂ” РѕР±С‘СЂС‚РєР° РЅР°Рґ Bitrix24 REST API
-// Р’СЃРµ Р·Р°РїСЂРѕСЃС‹ РёРґСѓС‚ С‡РµСЂРµР· PHP РїСЂРѕРєСЃРё вЂ” РІРµР±С…СѓРє СЃРєСЂС‹С‚ РѕС‚ РєР»РёРµРЅС‚Р°
+// API — обёртка над Bitrix24 REST API
+// Все запросы идут через PHP прокси — вебхук скрыт от клиента
 // ============================================================
 
 const B24_API = {
 
-  // Р‘Р°Р·РѕРІС‹Р№ Р·Р°РїСЂРѕСЃ Рє REST API С‡РµСЂРµР· РїСЂРѕРєСЃРё
+  // Базовый запрос к REST API через прокси
   async call(method, params = {}) {
     let url;
     let body;
 
     if (B24_CONFIG.AUTH_TOKEN) {
-      // OAuth СЂРµР¶РёРј (Local App РІРЅСѓС‚СЂРё Bitrix24) вЂ” РЅР°РїСЂСЏРјСѓСЋ СЃ С‚РѕРєРµРЅРѕРј
+      // OAuth режим (Local App внутри Bitrix24) — напрямую с токеном
       url = `${B24_CONFIG.PORTAL_DOMAIN}/rest/${method}`;
       body = JSON.stringify({ ...params, auth: B24_CONFIG.AUTH_TOKEN });
     } else if (B24_CONFIG.PROXY_URL) {
-      // РџСЂРѕРєСЃРё СЂРµР¶РёРј вЂ” С‚РѕРєРµРЅ СЃРєСЂС‹С‚ РЅР° СЃРµСЂРІРµСЂРµ
+      // Прокси режим — токен скрыт на сервере
       url = B24_CONFIG.PROXY_URL;
       body = JSON.stringify({ method, params });
     } else {
-      // Fallback: РїСЂСЏРјРѕР№ РІРµР±С…СѓРє (С‚РѕР»СЊРєРѕ РґР»СЏ СЂР°Р·СЂР°Р±РѕС‚РєРё)
+      // Fallback: прямой вебхук (только для разработки)
       url = B24_CONFIG.WEBHOOK_URL + method;
       body = JSON.stringify(params);
     }
@@ -46,9 +46,9 @@ const B24_API = {
     }
   },
 
-  // в”Ђв”Ђв”Ђ РђР’РўРћР РР—РђР¦РРЇ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ─── АВТОРИЗАЦИЯ ────────────────────────────────────────────
 
-  // РќР°Р№С‚Рё РєРѕРЅС‚Р°РєС‚ РїРѕ email
+  // Найти контакт по email
   async findContactByEmail(email) {
     const result = await this.call('crm.contact.list', {
       filter: { EMAIL: email },
@@ -61,14 +61,14 @@ const B24_API = {
     return result && result.length > 0 ? result[0] : null;
   },
 
-  // РџРѕР»СѓС‡РёС‚СЊ РєРѕРјРїР°РЅРёСЋ РїРѕ ID
+  // Получить компанию по ID
   async getCompany(companyId) {
     return await this.call('crm.company.get', { id: companyId });
   },
 
-  // в”Ђв”Ђв”Ђ РЎРћРћР‘Р©Р•РќРРЇ (С‡РµСЂРµР· РѕР±С‹С‡РЅС‹Р№ РјРµСЃСЃРµРЅРґР¶РµСЂ) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ─── СООБЩЕНИЯ (через обычный мессенджер) ──────────────────
 
-  // РџРѕР»СѓС‡РёС‚СЊ РёР»Рё СЃРѕР·РґР°С‚СЊ РіСЂСѓРїРїРѕРІРѕР№ С‡Р°С‚ РґР»СЏ РєРѕРјРїР°РЅРёРё
+  // Получить или создать групповой чат для компании
   async getOrCreateCompanyChat(companyId, companyName) {
     const companyData = await this.getCompany(companyId);
     if (companyData) {
@@ -81,33 +81,53 @@ const B24_API = {
         if (test !== null) {
           return { ID: parseInt(existingChatId) };
         }
-        // Р§Р°С‚ СѓРґР°Р»С‘РЅ вЂ” РѕС‡РёСЃС‚РёС‚СЊ РїРѕР»Рµ Рё СЃРѕР·РґР°С‚СЊ РЅРѕРІС‹Р№
+        // Чат удалён — очистить поле и создать новый
         await this.updateCompany(companyId, {
           [B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID]: '',
         });
       }
     }
 
-    const chatTitle = `РљРѕРјРїР°РЅРёСЏ: ${companyName}`;
+    const chatTitle = `Компания: ${companyName}`;
     const newChatId = await this.call('im.chat.add', {
       TYPE: 'CHAT',
       TITLE: chatTitle,
-      DESCRIPTION: `Р§Р°С‚ СЃРѕРїСЂРѕРІРѕР¶РґРµРЅРёСЏ РґР»СЏ РєРѕРјРїР°РЅРёРё ${companyName} (ID: ${companyId})`,
-      MESSAGE: 'Р§Р°С‚ СЃРѕР·РґР°РЅ. Р—РґРµСЃСЊ Р±СѓРґСѓС‚ РІСЃРµ РѕР±СЂР°С‰РµРЅРёСЏ РѕС‚ РєР»РёРµРЅС‚Р°.',
+      DESCRIPTION: `Чат сопровождения для компании ${companyName} (ID: ${companyId})`,
+      MESSAGE: 'Чат создан. Здесь будут все обращения от клиента.',
     });
 
     if (newChatId && companyData) {
+      // Добавить специалиста если назначен
       const specialistId = companyData[B24_CONFIG.CRM_FIELDS.COMPANY.SPECIALIST];
       if (specialistId) {
         await this.addUserToChat(newChatId, specialistId);
+      }
+      
+      // Добавить всех руководителей отдела "Сопровождение"
+      try {
+        const departments = await this.call('department.get', {});
+        if (departments && departments.length > 0) {
+          const dept = departments.find(d => d.NAME === 'Сопровождение');
+          if (dept) {
+            const deptDetails = await this.call('department.get', { ID: dept.ID });
+            if (deptDetails && deptDetails.length > 0) {
+              const headId = deptDetails[0].UF_HEAD;
+              if (headId && String(headId) !== String(specialistId)) {
+                await this.addUserToChat(newChatId, headId);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Ошибка добавления руководителя в чат:', e);
       }
     }
 
     return newChatId ? { ID: newChatId } : null;
   },
 
-  // РџРѕР»СѓС‡РёС‚СЊ РёСЃС‚РѕСЂРёСЋ СЃРѕРѕР±С‰РµРЅРёР№ С‡Р°С‚Р°
-  // РЎРЅР°С‡Р°Р»Р° РїСЂРѕР±СѓРµРј KV С‡РµСЂРµР· Worker, fallback Рє Bitrix24 API
+  // Получить историю сообщений чата
+  // Сначала пробуем KV через Worker, fallback к Bitrix24 API
   async getChatMessages(chatId) {
     try {
       const resp = await fetch(B24_CONFIG.PROXY_URL, {
@@ -126,24 +146,24 @@ const B24_API = {
       console.warn('[getChatMessages] KV error, falling back:', e);
     }
 
-    // Fallback: РїСЂСЏРјРѕР№ Р·Р°РїСЂРѕСЃ Рє Bitrix24
+    // Fallback: прямой запрос к Bitrix24
     return await this.call('im.dialog.messages.get', {
       DIALOG_ID: `chat${chatId}`,
       LIMIT: 100,
     });
   },
 
-  // РћС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ РІ С‡Р°С‚
-  // fromName СЃРѕС…СЂР°РЅСЏРµС‚СЃСЏ РєР°Рє РїСЂРµС„РёРєСЃ [РРјСЏ]: вЂ” РµРґРёРЅСЃС‚РІРµРЅРЅС‹Р№ СЃРїРѕСЃРѕР±
-  // РёРґРµРЅС‚РёС„РёС†РёСЂРѕРІР°С‚СЊ РѕС‚РїСЂР°РІРёС‚РµР»СЏ С‡РµСЂРµР· РѕРґРёРЅ РІРµР±С…СѓРє
-  async sendMessage(chatId, text, fromName = 'РљР»РёРµРЅС‚') {
+  // Отправить сообщение в чат
+  // fromName сохраняется как префикс [Имя]: — единственный способ
+  // идентифицировать отправителя через один вебхук
+  async sendMessage(chatId, text, fromName = 'Клиент') {
     return await this.call('im.message.add', {
       DIALOG_ID: `chat${chatId}`,
       MESSAGE: `[${fromName}]: ${text}`,
     });
   },
 
-  // Р”РѕР±Р°РІРёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ (СЃРїРµС†РёР°Р»РёСЃС‚Р°) РІ С‡Р°С‚
+  // Добавить пользователя (специалиста) в чат
   async addUserToChat(chatId, userId) {
     return await this.call('im.chat.user.add', {
       CHAT_ID: chatId,
@@ -151,7 +171,7 @@ const B24_API = {
     });
   },
 
-  // РЈРґР°Р»РёС‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РёР· С‡Р°С‚Р°
+  // Удалить пользователя из чата
   async removeUserFromChat(chatId, userId) {
     return await this.call('im.chat.user.delete', {
       CHAT_ID: chatId,
@@ -159,9 +179,9 @@ const B24_API = {
     });
   },
 
-  // в”Ђв”Ђв”Ђ Р¤РђР™Р›Р« в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ─── ФАЙЛЫ ──────────────────────────────────────────────────
 
-  // Р—Р°РіСЂСѓР·РёС‚СЊ С„Р°Р№Р» РЅР° Р”РёСЃРє Bitrix24 РІ РїР°РїРєСѓ РєРѕРјРїР°РЅРёРё
+  // Загрузить файл на Диск Bitrix24 в папку компании
   async uploadFile(folderId, fileName, fileBase64) {
     return await this.call('disk.folder.uploadfile', {
       id: folderId,
@@ -170,46 +190,46 @@ const B24_API = {
     });
   },
 
-  // РќР°Р№С‚Рё РёР»Рё СЃРѕР·РґР°С‚СЊ РїР°РїРєСѓ РєРѕРјРїР°РЅРёРё РЅР° Р”РёСЃРєРµ
+  // Найти или создать папку компании на Диске
   async getOrCreateCompanyFolder(parentFolderId, companyName) {
-    // РС‰РµРј СЃСѓС‰РµСЃС‚РІСѓСЋС‰СѓСЋ РїР°РїРєСѓ
+    // Ищем существующую папку
     const list = await this.call('disk.folder.getchildren', {
       id: parentFolderId,
       filter: { NAME: companyName },
     });
     if (list && list.length > 0) return list[0];
 
-    // РЎРѕР·РґР°С‘Рј РЅРѕРІСѓСЋ
+    // Создаём новую
     return await this.call('disk.folder.addsubfolder', {
       id: parentFolderId,
       data: { NAME: companyName },
     });
   },
 
-  // в”Ђв”Ђв”Ђ CRM в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ─── CRM ────────────────────────────────────────────────────
 
-  // РЎРѕР·РґР°С‚СЊ РєРѕРЅС‚Р°РєС‚ (РЅРѕРІС‹Р№ РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РєР»РёРµРЅС‚Р°)
+  // Создать контакт (новый пользователь клиента)
   async createContact(fields) {
     return await this.call('crm.contact.add', { fields });
   },
 
-  // РћР±РЅРѕРІРёС‚СЊ РєРѕРЅС‚Р°РєС‚
+  // Обновить контакт
   async updateContact(id, fields) {
     return await this.call('crm.contact.update', { id, fields });
   },
 
-  // РЎРѕР·РґР°С‚СЊ РєРѕРјРїР°РЅРёСЋ
+  // Создать компанию
   async createCompany(fields) {
     return await this.call('crm.company.add', { fields });
   },
 
-  // РћР±РЅРѕРІРёС‚СЊ РєРѕРјРїР°РЅРёСЋ
+  // Обновить компанию
   async updateCompany(id, fields) {
     return await this.call('crm.company.update', { id, fields });
   },
 
-  // РџРѕР»СѓС‡РёС‚СЊ СЃРїРёСЃРѕРє РІСЃРµС… РєРѕРјРїР°РЅРёР№ (РґР»СЏ СЂСѓРєРѕРІРѕРґРёС‚РµР»СЏ)
-  // Р—Р°РіСЂСѓР¶Р°РµС‚ РІСЃРµ СЃС‚СЂР°РЅРёС†С‹ РµСЃР»Рё РєРѕРјРїР°РЅРёР№ Р±РѕР»СЊС€Рµ 50
+  // Получить список всех компаний (для руководителя)
+  // Загружает все страницы если компаний больше 50
   async getCompanies(filter = {}) {
     const select = [
       'ID', 'TITLE',
@@ -236,7 +256,7 @@ const B24_API = {
       if (!result || result.length === 0) break;
       all = all.concat(result);
 
-      // Bitrix24 РІРѕР·РІСЂР°С‰Р°РµС‚ РјР°РєСЃРёРјСѓРј 50 Р·Р° СЂР°Р·
+      // Bitrix24 возвращает максимум 50 за раз
       if (result.length < 50) break;
       start += 50;
     }
@@ -244,16 +264,16 @@ const B24_API = {
     return all;
   },
 
-  // РџРѕР»СѓС‡РёС‚СЊ РєРѕРЅС‚Р°РєС‚С‹ РєРѕРјРїР°РЅРёРё
+  // Получить контакты компании
   async getCompanyContacts(companyId) {
     return await this.call('crm.company.contact.items.get', {
       id: companyId,
     });
   },
 
-  // в”Ђв”Ђв”Ђ РџРћР›Р¬Р—РћР’РђРўР•Р›Р РџРћР РўРђР›Рђ в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+  // ─── ПОЛЬЗОВАТЕЛИ ПОРТАЛА ───────────────────────────────────
 
-  // РџРѕР»СѓС‡РёС‚СЊ СЃРїРёСЃРѕРє СЃРѕС‚СЂСѓРґРЅРёРєРѕРІ РѕС‚РґРµР»Р° (РґР»СЏ РЅР°Р·РЅР°С‡РµРЅРёСЏ СЃРїРµС†РёР°Р»РёСЃС‚Р°)
+  // Получить список сотрудников отдела (для назначения специалиста)
   async getDepartmentUsers(departmentId) {
     return await this.call('user.get', {
       filter: { UF_DEPARTMENT: departmentId },
