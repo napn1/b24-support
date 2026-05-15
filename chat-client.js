@@ -1,5 +1,5 @@
 // ============================================================
-// CHAT CLIENT вЂ” Р»РѕРіРёРєР° РєР»РёРµРЅС‚СЃРєРѕРіРѕ С‡Р°С‚Р°
+// CHAT CLIENT — логика клиентского чата
 // ============================================================
 
 let session = null;
@@ -7,39 +7,39 @@ let chatId = null;
 let lastMessageId = 0;
 let pollingInterval = null;
 
-// в”Ђв”Ђв”Ђ INIT в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── INIT ───────────────────────────────────────────────────
 
 async function init() {
   session = B24_AUTH.requireAuth();
   if (!session) return;
 
-  // РћС‚РѕР±СЂР°Р·РёС‚СЊ РґР°РЅРЅС‹Рµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+  // Отобразить данные пользователя
   document.getElementById('userName').textContent = session.name;
   document.getElementById('companyName').textContent = session.companyName;
   
   const avatar = session.companyName ? session.companyName.charAt(0).toUpperCase() : '?';
   document.getElementById('companyAvatar').textContent = avatar;
 
-  // РћР±РЅРѕРІРёС‚СЊ СЃС‚Р°С‚СѓСЃ РїРѕРґРїРёСЃРєРё
+  // Обновить статус подписки
   updateSubscriptionBadge();
 
-  // РџРѕР»СѓС‡РёС‚СЊ РёР»Рё СЃРѕР·РґР°С‚СЊ С‡Р°С‚ РєРѕРјРїР°РЅРёРё
+  // Получить или создать чат компании
   await initChat();
 
-  // Р—Р°РіСЂСѓР·РёС‚СЊ РёСЃС‚РѕСЂРёСЋ
+  // Загрузить историю
   await loadMessages();
 
-  // Р—Р°РїСѓСЃС‚РёС‚СЊ polling
+  // Запустить polling
   startPolling();
 
-  // РђРІС‚РѕСѓРІРµР»РёС‡РµРЅРёРµ textarea
+  // Автоувеличение textarea
   const input = document.getElementById('messageInput');
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = input.scrollHeight + 'px';
   });
 
-  // РћС‚РїСЂР°РІРєР° РїРѕ Enter (Shift+Enter = РЅРѕРІР°СЏ СЃС‚СЂРѕРєР°)
+  // Отправка по Enter (Shift+Enter = новая строка)
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -48,11 +48,11 @@ async function init() {
   });
 }
 
-// в”Ђв”Ђв”Ђ CHAT в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── CHAT ───────────────────────────────────────────────────
 
 async function initChat() {
   if (!session.companyId) {
-    showError('РљРѕРјРїР°РЅРёСЏ РЅРµ РїСЂРёРІСЏР·Р°РЅР° Рє РІР°С€РµРјСѓ Р°РєРєР°СѓРЅС‚Сѓ');
+    showError('Компания не привязана к вашему аккаунту');
     return;
   }
 
@@ -62,13 +62,13 @@ async function initChat() {
   );
 
   if (!chat || !chat.ID) {
-    showError('РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ С‡Р°С‚');
+    showError('Не удалось создать чат');
     return;
   }
 
   chatId = chat.ID;
 
-  // РЎРѕС…СЂР°РЅРёС‚СЊ chatId РІ РѕС‚РґРµР»СЊРЅРѕРµ РїРѕР»Рµ РєРѕРјРїР°РЅРёРё
+  // Сохранить chatId в отдельное поле компании
   await B24_API.updateCompany(session.companyId, {
     [B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID]: String(chatId),
   });
@@ -108,7 +108,7 @@ async function sendMessage() {
   if (result) {
     input.value = '';
     input.style.height = 'auto';
-    // Р”РѕР±Р°РІРёС‚СЊ СЃРІРѕС‘ СЃРѕРѕР±С‰РµРЅРёРµ СЃСЂР°Р·Сѓ, РЅРµ РїРµСЂРµР·Р°РіСЂСѓР¶Р°СЏ РІРµСЃСЊ С‡Р°С‚
+    // Добавить своё сообщение сразу, не перезагружая весь чат
     appendMessage({
       id: result,
       author_id: 'client',
@@ -126,7 +126,7 @@ async function sendMessage() {
 function appendMessage(msg) {
   const container = document.getElementById('chatMessages');
 
-  // РќРµ РґРѕР±Р°РІР»СЏС‚СЊ РґСѓР±Р»РёРєР°С‚С‹
+  // Не добавлять дубликаты
   if (document.querySelector(`[data-msg-id="${msg.id}"]`)) return;
 
   const div = document.createElement('div');
@@ -134,12 +134,12 @@ function appendMessage(msg) {
 
   let text = msg.text || '';
 
-  // РЈР±СЂР°С‚СЊ BB-РєРѕРґС‹ Bitrix24
+  // Убрать BB-коды Bitrix24
   text = text.replace(/\[USER=\d+\s+REPLACE\](.*?)\[\/USER\]/gi, '$1');
   text = text.replace(/\[USER=\d+\](.*?)\[\/USER\]/gi, '$1');
   text = text.replace(/\[\/?(B|I|U|S|URL|IMG|CODE|QUOTE)[^\]]*\]/gi, '');
 
-  // РР·РІР»РµС‡СЊ РёРјСЏ Р°РІС‚РѕСЂР° РёР· РїСЂРµС„РёРєСЃР° [РРјСЏ]: РµСЃР»Рё РµСЃС‚СЊ
+  // Извлечь имя автора из префикса [Имя]: если есть
   let authorName = '';
   const prefixMatch = text.match(/^\[([^\]]+)\]:\s*/);
   if (prefixMatch) {
@@ -147,11 +147,11 @@ function appendMessage(msg) {
     text = text.replace(prefixMatch[0], '');
   }
 
-  // РћРїСЂРµРґРµР»РёС‚СЊ СЃС‚РѕСЂРѕРЅСѓ: РєР»РёРµРЅС‚ вЂ” РµСЃР»Рё РёРјСЏ СЃРѕРІРїР°РґР°РµС‚ СЃ РЅР°С€РёРј
+  // Определить сторону: клиент — если имя совпадает с нашим
   const isClient = authorName === session.name;
 
-  // РЎРёСЃС‚РµРјРЅС‹Рµ СЃРѕРѕР±С‰РµРЅРёСЏ вЂ” С‚РѕР»СЊРєРѕ С‚Рµ Сѓ РєРѕС‚РѕСЂС‹С… РЅРµС‚ author_id Р РЅРµС‚ РїСЂРµС„РёРєСЃР°
-  // РЎРѕРѕР±С‰РµРЅРёСЏ РѕС‚ СЃРїРµС†РёР°Р»РёСЃС‚Р° РјРѕРіСѓС‚ РЅРµ РёРјРµС‚СЊ РїСЂРµС„РёРєСЃР° РЅРѕ РёРјРµС‚СЊ author_id
+  // Системные сообщения — только те у которых нет author_id И нет префикса
+  // Сообщения от специалиста могут не иметь префикса но иметь author_id
   const isSystem = (!msg.author_id || msg.author_id == 0) && !authorName;
   if (isSystem) {
     div.className = 'message system';
@@ -160,19 +160,19 @@ function appendMessage(msg) {
     return;
   }
 
-  // Р•СЃР»Рё РЅРµС‚ РїСЂРµС„РёРєСЃР° РЅРѕ РµСЃС‚СЊ author_id вЂ” СЌС‚Рѕ СЃРѕРѕР±С‰РµРЅРёРµ РѕС‚ СЃРїРµС†РёР°Р»РёСЃС‚Р°/Р°РґРјРёРЅР°
-  // РѕС‚РїСЂР°РІР»РµРЅРЅРѕРµ РЅР°РїСЂСЏРјСѓСЋ С‡РµСЂРµР· Bitrix24 (РЅРµ С‡РµСЂРµР· РЅР°С€ РІРµР±С…СѓРє)
+  // Если нет префикса но есть author_id — это сообщение от специалиста/админа
+  // отправленное напрямую через Bitrix24 (не через наш вебхук)
   const side = isClient ? 'client' : 'specialist';
-  // Р•СЃР»Рё РЅРµС‚ РёРјРµРЅРё Р°РІС‚РѕСЂР° вЂ” РїРѕРєР°Р·С‹РІР°РµРј "РЎРїРµС†РёР°Р»РёСЃС‚"
+  // Если нет имени автора — показываем "Специалист"
   if (!authorName && !isClient) {
-    authorName = 'РЎРїРµС†РёР°Р»РёСЃС‚';
+    authorName = 'Специалист';
   }
 
   div.className = `message ${side}`;
 
-  // РџР°СЂСЃРёС‚СЊ URL РёР· С‚РµРєСЃС‚Р° Р”Рћ escapeHtml
+  // Парсить URL из текста ДО escapeHtml
   let inlineFileHtml = '';
-  const urlMatch = text.match(/вЂ”\s*(https:\/\/raw\.githubusercontent\.com\/[^\s]+)/);
+  const urlMatch = text.match(/—\s*(https:\/\/raw\.githubusercontent\.com\/[^\s]+)/);
   if (urlMatch) {
     const url = urlMatch[1];
     text = text.replace(urlMatch[0], '').trim();
@@ -184,12 +184,12 @@ function appendMessage(msg) {
       : `<div style="margin-top:6px;display:flex;align-items:center;gap:8px;
           background:rgba(0,0,0,0.2);border-radius:8px;padding:8px 10px;cursor:pointer;"
           onclick="window.open('${url}','_blank')">
-          <span style="font-size:18px;">рџ“„</span>
-          <div style="font-size:13px;">РЎРєР°С‡Р°С‚СЊ С„Р°Р№Р»</div>
+          <span style="font-size:18px;">📄</span>
+          <div style="font-size:13px;">Скачать файл</div>
         </div>`;
   }
 
-  // РџСЂРѕРІРµСЂРёС‚СЊ РµСЃС‚СЊ Р»Рё РІР»РѕР¶РµРЅРёРµ С„Р°Р№Р»Р° (РёР· Р»РѕРєР°Р»СЊРЅРѕРіРѕ РґРѕР±Р°РІР»РµРЅРёСЏ)
+  // Проверить есть ли вложение файла (из локального добавления)
   const fileHtml = msg.fileUrl ? renderFileAttachment(msg.fileUrl, msg.fileName, msg.fileType, msg.fileSize) : '';
 
   div.innerHTML = `
@@ -216,7 +216,7 @@ function renderFileAttachment(url, name, type, size) {
   return `<div style="margin-top:6px; display:flex; align-items:flex-start; gap:8px;
     background:rgba(0,0,0,0.2); border-radius:8px; padding:8px 10px; cursor:pointer; min-width:0;"
     onclick="window.open('${url}','_blank')">
-    <span style="font-size:18px; flex-shrink:0;">рџ“„</span>
+    <span style="font-size:18px; flex-shrink:0;">📄</span>
     <div style="min-width:0; overflow:hidden;">
       <div style="font-size:13px; font-weight:500; word-break:break-all; overflow-wrap:break-word;">${escapeHtml(name)}</div>
       ${size ? `<div style="font-size:11px; opacity:0.7;">${size}</div>` : ''}
@@ -224,7 +224,7 @@ function renderFileAttachment(url, name, type, size) {
   </div>`;
 }
 
-// в”Ђв”Ђв”Ђ POLLING в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── POLLING ────────────────────────────────────────────────
 
 function startPolling() {
   if (pollingInterval) clearInterval(pollingInterval);
@@ -255,7 +255,7 @@ function startPolling() {
   }, B24_CONFIG.POLLING_INTERVAL);
 }
 
-// в”Ђв”Ђв”Ђ FILES в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── FILES ──────────────────────────────────────────────────
 
 function attachFile() {
   document.getElementById('fileInput').click();
@@ -266,21 +266,21 @@ async function handleFileSelect() {
   const file = input.files[0];
   if (!file) return;
 
-  // РџСЂРѕРІРµСЂРєР° СЂР°Р·РјРµСЂР°
+  // Проверка размера
   if (file.size > B24_CONFIG.MAX_FILE_SIZE) {
-    alert(`Р¤Р°Р№Р» СЃР»РёС€РєРѕРј Р±РѕР»СЊС€РѕР№. РњР°РєСЃРёРјСѓРј ${B24_CONFIG.MAX_FILE_SIZE / 1024 / 1024} РњР‘.`);
+    alert(`Файл слишком большой. Максимум ${B24_CONFIG.MAX_FILE_SIZE / 1024 / 1024} МБ.`);
     input.value = '';
     return;
   }
 
-  // РџСЂРѕРІРµСЂРєР° С‚РёРїР°
+  // Проверка типа
   if (!B24_CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
-    alert('Р­С‚РѕС‚ С‚РёРї С„Р°Р№Р»Р° РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ.');
+    alert('Этот тип файла не поддерживается.');
     input.value = '';
     return;
   }
 
-  // РџРѕРєР°Р·Р°С‚СЊ РёРЅРґРёРєР°С‚РѕСЂ Р·Р°РіСЂСѓР·РєРё
+  // Показать индикатор загрузки
   const btn = document.getElementById('btnSend');
   const attachBtn = document.querySelector('.btn-attach');
   attachBtn.disabled = true;
@@ -290,7 +290,7 @@ async function handleFileSelect() {
     await uploadAndSendFile(file);
   } catch (e) {
     console.error('File upload error:', e);
-    alert('РћС€РёР±РєР° РїСЂРё Р·Р°РіСЂСѓР·РєРµ С„Р°Р№Р»Р°');
+    alert('Ошибка при загрузке файла');
   }
 
   attachBtn.disabled = false;
@@ -305,7 +305,7 @@ async function uploadAndSendFile(file) {
   const fileSize = formatFileSize(file.size);
   const isImage = file.type.startsWith('image/');
 
-  // Р—Р°РіСЂСѓР·РёС‚СЊ С„Р°Р№Р» РЅР° GitHub С‡РµСЂРµР· Cloudflare Worker
+  // Загрузить файл на GitHub через Cloudflare Worker
   const uploadResp = await fetch(B24_CONFIG.PROXY_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -318,14 +318,14 @@ async function uploadAndSendFile(file) {
 
   const uploadData = await uploadResp.json();
   if (!uploadData.ok || !uploadData.url) {
-    throw new Error('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С„Р°Р№Р»: ' + JSON.stringify(uploadData));
+    throw new Error('Не удалось загрузить файл: ' + JSON.stringify(uploadData));
   }
 
   const fileUrl = uploadData.url;
 
-  // РћС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ СЃРѕ СЃСЃС‹Р»РєРѕР№
+  // Отправить сообщение со ссылкой
   const msgResult = await B24_API.sendMessage(chatId,
-    `${isImage ? 'рџ–ј' : 'рџ“Ћ'} ${file.name} (${fileSize}) вЂ” ${fileUrl}`,
+    `${isImage ? '🖼' : '📎'} ${file.name} (${fileSize}) — ${fileUrl}`,
     session.name
   );
 
@@ -333,8 +333,8 @@ async function uploadAndSendFile(file) {
     appendMessage({
       id: msgResult,
       author_id: 'client',
-      // РўРµРєСЃС‚ Р±РµР· URL вЂ” РїСЂРµРІСЊСЋ СЂРµРЅРґРµСЂРёС‚СЃСЏ С‡РµСЂРµР· fileUrl
-      text: `[${session.name}]: ${isImage ? 'рџ–ј' : 'рџ“Ћ'} ${file.name} (${fileSize})`,
+      // Текст без URL — превью рендерится через fileUrl
+      text: `[${session.name}]: ${isImage ? '🖼' : '📎'} ${file.name} (${fileSize})`,
       date: new Date().toISOString(),
       fileUrl,
       fileName: file.name,
@@ -350,7 +350,7 @@ function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      // РЈР±СЂР°С‚СЊ РїСЂРµС„РёРєСЃ "data:...;base64,"
+      // Убрать префикс "data:...;base64,"
       const base64 = reader.result.split(',')[1];
       resolve(base64);
     };
@@ -360,19 +360,19 @@ function fileToBase64(file) {
 }
 
 function formatFileSize(bytes) {
-  if (bytes < 1024) return bytes + ' Р‘';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' РљР‘';
-  return (bytes / 1024 / 1024).toFixed(1) + ' РњР‘';
+  if (bytes < 1024) return bytes + ' Б';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
+  return (bytes / 1024 / 1024).toFixed(1) + ' МБ';
 }
 
-// в”Ђв”Ђв”Ђ SUBSCRIPTION в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── SUBSCRIPTION ───────────────────────────────────────────
 
 function updateSubscriptionBadge() {
   if (!session.companyData) return;
 
   const subEnd = session.companyData[B24_CONFIG.CRM_FIELDS.COMPANY.SUB_END];
   if (!subEnd) {
-    document.getElementById('subBadge').textContent = 'РќРµС‚ РїРѕРґРїРёСЃРєРё';
+    document.getElementById('subBadge').textContent = 'Нет подписки';
     document.getElementById('subBadge').className = 'subscription-badge expired';
     return;
   }
@@ -384,36 +384,33 @@ function updateSubscriptionBadge() {
   const badge = document.getElementById('subBadge');
 
   if (daysLeft < 0) {
-    badge.textContent = 'РџРѕРґРїРёСЃРєР° РёСЃС‚РµРєР»Р°';
+    badge.textContent = 'Подписка истекла';
     badge.className = 'subscription-badge expired';
   } else if (daysLeft <= 7) {
-    badge.textContent = `РћСЃС‚Р°Р»РѕСЃСЊ ${daysLeft} РґРЅ.`;
+    badge.textContent = `Осталось ${daysLeft} дн.`;
     badge.className = 'subscription-badge expiring';
   } else {
-    badge.textContent = `РђРєС‚РёРІРЅР° (${daysLeft} РґРЅ.)`;
+    badge.textContent = `Активна (${daysLeft} дн.)`;
     badge.className = 'subscription-badge active';
   }
 }
 
-// в”Ђв”Ђв”Ђ UTILS в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── UTILS ──────────────────────────────────────────────────
 
-// Р¦РІРµС‚ РЅРёРєР° РїРѕ РёРјРµРЅРё Р°РІС‚РѕСЂР°
-// РЎРїРµС†РёР°Р»РёСЃС‚ вЂ” РІР°СЃРёР»СЊРєРѕРІС‹Р№, РєР»РёРµРЅС‚ вЂ” СѓРЅРёРєР°Р»СЊРЅС‹Р№ С†РІРµС‚ РїРѕ С…РµС€Сѓ РёРјРµРЅРё
+// Цвет ника по имени автора
+// Специалист — синий, клиент — уникальный цвет по хешу имени
 function getAuthorColor(authorName, isClient) {
-  if (!isClient) return '#5b9cf6'; // РЎРїРµС†РёР°Р»РёСЃС‚ вЂ” РІР°СЃРёР»СЊРєРѕРІС‹Р№
+  if (!isClient) return '#0ea5e9'; // Специалист — синий
 
-  // Р”Р»СЏ РєР»РёРµРЅС‚РѕРІ вЂ” РґРµС‚РµСЂРјРёРЅРёСЂРѕРІР°РЅРЅС‹Р№ С†РІРµС‚ РїРѕ РёРјРµРЅРё
+  // Для клиентов — детерминированный цвет по имени (исключены зелёный и синий)
   const colors = [
-    '#f87171', // РєСЂР°СЃРЅС‹Р№
-    '#fb923c', // РѕСЂР°РЅР¶РµРІС‹Р№
-    '#fbbf24', // Р¶С‘Р»С‚С‹Р№
-    '#34d399', // Р·РµР»С‘РЅС‹Р№
-    '#22d3ee', // РіРѕР»СѓР±РѕР№
-    '#a78bfa', // С„РёРѕР»РµС‚РѕРІС‹Р№
-    '#f472b6', // СЂРѕР·РѕРІС‹Р№
-    '#4ade80', // СЃРІРµС‚Р»Рѕ-Р·РµР»С‘РЅС‹Р№
-    '#60a5fa', // СЃРёРЅРёР№
-    '#e879f9', // РїСѓСЂРїСѓСЂРЅС‹Р№
+    '#f87171', // красный
+    '#fb923c', // оранжевый
+    '#fbbf24', // жёлтый
+    '#22d3ee', // голубой
+    '#a78bfa', // фиолетовый
+    '#f472b6', // розовый
+    '#e879f9', // пурпурный
   ];
   let hash = 0;
   for (let i = 0; i < authorName.length; i++) {
@@ -446,7 +443,7 @@ function showError(msg) {
 }
 
 function playNotificationSound() {
-  // РџСЂРѕСЃС‚РѕР№ beep С‡РµСЂРµР· Web Audio API
+  // Простой beep через Web Audio API
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
@@ -458,7 +455,7 @@ function playNotificationSound() {
     osc.start();
     osc.stop(ctx.currentTime + 0.1);
   } catch (e) {
-    // РРіРЅРѕСЂРёСЂСѓРµРј РµСЃР»Рё РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ
+    // Игнорируем если не поддерживается
   }
 }
 
@@ -466,15 +463,15 @@ let originalTitle = document.title;
 let titleFlashInterval = null;
 
 function flashTitle() {
-  if (titleFlashInterval) return; // РЈР¶Рµ РјРёРіР°РµС‚
+  if (titleFlashInterval) return; // Уже мигает
 
   let toggle = false;
   titleFlashInterval = setInterval(() => {
-    document.title = toggle ? originalTitle : 'рџ’¬ РќРѕРІРѕРµ СЃРѕРѕР±С‰РµРЅРёРµ';
+    document.title = toggle ? originalTitle : '💬 Новое сообщение';
     toggle = !toggle;
   }, 1000);
 
-  // РћСЃС‚Р°РЅРѕРІРёС‚СЊ С‡РµСЂРµР· 5 СЃРµРєСѓРЅРґ
+  // Остановить через 5 секунд
   setTimeout(() => {
     clearInterval(titleFlashInterval);
     titleFlashInterval = null;
@@ -482,6 +479,6 @@ function flashTitle() {
   }, 5000);
 }
 
-// в”Ђв”Ђв”Ђ START в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
+// ─── START ──────────────────────────────────────────────────
 
 init();
