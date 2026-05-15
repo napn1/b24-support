@@ -68,9 +68,9 @@ async function initChat() {
 
   chatId = chat.ID;
 
-  // Сохранить chatId в данных компании (для специалистов)
+  // Сохранить chatId в отдельное поле компании
   await B24_API.updateCompany(session.companyId, {
-    COMMENTS: `ChatID: ${chatId}`,
+    [B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID]: String(chatId),
   });
 }
 
@@ -333,7 +333,8 @@ async function uploadAndSendFile(file) {
     appendMessage({
       id: msgResult,
       author_id: 'client',
-      text: `[${session.name}]: ${isImage ? '🖼' : '📎'} ${file.name} (${fileSize}) — ${fileUrl}`,
+      // Текст без URL — превью рендерится через fileUrl
+      text: `[${session.name}]: ${isImage ? '🖼' : '📎'} ${file.name} (${fileSize})`,
       date: new Date().toISOString(),
       fileUrl,
       fileName: file.name,
