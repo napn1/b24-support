@@ -70,17 +70,24 @@ const B24_API = {
 
   // Получить или создать групповой чат для компании
   async getOrCreateCompanyChat(companyId, companyName) {
-    // Сначала проверяем — есть ли уже сохранённый ChatID в комментариях компании
     const companyData = await this.getCompany(companyId);
-    if (companyData && companyData.COMMENTS) {
-      const match = companyData.COMMENTS.match(/ChatID:\s*(\d+)/);
-      if (match) {
-        console.log('[getOrCreateCompanyChat] found existing chatId:', match[1]);
-        return { ID: parseInt(match[1]) };
+    if (companyData) {
+      const existingChatId = companyData[B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID];
+      if (existingChatId) {
+        const test = await this.call('im.dialog.messages.get', {
+          DIALOG_ID: `chat${existingChatId}`,
+          LIMIT: 1,
+        });
+        if (test !== null) {
+          return { ID: parseInt(existingChatId) };
+        }
+        // Чат удалён — очистить поле и создать новый
+        await this.updateCompany(companyId, {
+          [B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID]: '',
+        });
       }
     }
 
-    // Чата нет — создаём новый
     const chatTitle = `Компания: ${companyName}`;
     const newChatId = await this.call('im.chat.add', {
       TYPE: 'CHAT',
@@ -89,16 +96,10 @@ const B24_API = {
       MESSAGE: 'Чат создан. Здесь будут все обращения от клиента.',
     });
 
-    console.log('[getOrCreateCompanyChat] created new chat:', newChatId);
-
-    // Добавить специалиста компании в чат
     if (newChatId && companyData) {
       const specialistId = companyData[B24_CONFIG.CRM_FIELDS.COMPANY.SPECIALIST];
       if (specialistId) {
-        console.log('[getOrCreateCompanyChat] adding specialist to chat:', specialistId);
         await this.addUserToChat(newChatId, specialistId);
-      } else {
-        console.warn('[getOrCreateCompanyChat] no specialist assigned to company');
       }
     }
 
@@ -147,6 +148,14 @@ const B24_API = {
     return await this.call('im.chat.user.add', {
       CHAT_ID: chatId,
       USERS: [userId],
+    });
+  },
+
+  // Удалить пользователя из чата
+  async removeUserFromChat(chatId, userId) {
+    return await this.call('im.chat.user.delete', {
+      CHAT_ID: chatId,
+      USER_ID: userId,
     });
   },
 
