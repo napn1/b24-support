@@ -90,6 +90,18 @@ const B24_API = {
     });
 
     console.log('[getOrCreateCompanyChat] created new chat:', newChatId);
+
+    // Добавить специалиста компании в чат
+    if (newChatId && companyData) {
+      const specialistId = companyData[B24_CONFIG.CRM_FIELDS.COMPANY.SPECIALIST];
+      if (specialistId) {
+        console.log('[getOrCreateCompanyChat] adding specialist to chat:', specialistId);
+        await this.addUserToChat(newChatId, specialistId);
+      } else {
+        console.warn('[getOrCreateCompanyChat] no specialist assigned to company');
+      }
+    }
+
     return newChatId ? { ID: newChatId } : null;
   },
 
