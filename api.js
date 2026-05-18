@@ -6,7 +6,7 @@
 const B24_API = {
 
   // Базовый запрос к REST API через прокси
-  async call(method, params = {}) {
+  async call(method, params = {}, retryCount = 0) {
     let url;
     let body;
 
@@ -32,6 +32,19 @@ const B24_API = {
       });
       const data = await response.json();
       if (data.error) {
+        // Обработка истёкшего токена
+        if ((data.error === 'EXPIRED_TOKEN' || data.error === 'expired_token') && retryCount === 0) {
+          console.warn('Token expired, refreshing...');
+          const refreshed = await this.refreshToken();
+          if (refreshed) {
+            console.log('Token refreshed, retrying request...');
+            return await this.call(method, params, retryCount + 1);
+          } else {
+            console.error('Failed to refresh token');
+            return null;
+          }
+        }
+        
         if (data.error === 'QUERY_LIMIT_EXCEEDED') {
           await new Promise(r => setTimeout(r, 2000));
           return null;
@@ -44,6 +57,27 @@ const B24_API = {
       console.error(`B24 API fetch error [${method}]:`, err);
       return null;
     }
+  },
+
+  // Обновить токен доступа
+  async refreshToken() {
+    if (typeof BX24 === 'undefined' || !BX24.refreshAuth) {
+      console.error('BX24.refreshAuth not available');
+      return false;
+    }
+
+    return new Promise((resolve) => {
+      BX24.refreshAuth((auth) => {
+        if (auth && auth.access_token) {
+          B24_CONFIG.AUTH_TOKEN = auth.access_token;
+          console.log('Token refreshed successfully');
+          resolve(true);
+        } else {
+          console.error('Failed to refresh token');
+          resolve(false);
+        }
+      });
+    });
   },
 
   // ─── АВТОРИЗАЦИЯ ────────────────────────────────────────────
