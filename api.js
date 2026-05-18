@@ -7,6 +7,9 @@ const B24_API = {
 
   // Базовый запрос к REST API через прокси
   async call(method, params = {}, retryCount = 0) {
+    const MAX_RETRIES = 3; // Максимум 3 попытки
+    const RETRY_DELAY = 1000; // Начальная задержка 1 секунда
+    
     let url;
     let body;
 
@@ -45,17 +48,34 @@ const B24_API = {
           }
         }
         
+        // Обработка превышения лимита запросов
         if (data.error === 'QUERY_LIMIT_EXCEEDED') {
-          await new Promise(r => setTimeout(r, 2000));
-          return null;
+          if (retryCount < MAX_RETRIES) {
+            const delay = RETRY_DELAY * Math.pow(2, retryCount); // Экспоненциальная задержка
+            console.warn(`Query limit exceeded, retrying in ${delay}ms... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+            await new Promise(r => setTimeout(r, delay));
+            return await this.call(method, params, retryCount + 1);
+          } else {
+            console.error('Query limit exceeded, max retries reached');
+            return null;
+          }
         }
+        
         console.error(`B24 API error [${method}]:`, data.error, data.error_description);
         return null;
       }
       return data.result;
     } catch (err) {
-      console.error(`B24 API fetch error [${method}]:`, err);
-      return null;
+      // Повтор при сетевых ошибках
+      if (retryCount < MAX_RETRIES) {
+        const delay = RETRY_DELAY * Math.pow(2, retryCount); // Экспоненциальная задержка: 1s, 2s, 4s
+        console.warn(`Network error [${method}], retrying in ${delay}ms... (attempt ${retryCount + 1}/${MAX_RETRIES})`, err.message);
+        await new Promise(r => setTimeout(r, delay));
+        return await this.call(method, params, retryCount + 1);
+      } else {
+        console.error(`B24 API fetch error [${method}] - max retries reached:`, err);
+        return null;
+      }
     }
   },
 
