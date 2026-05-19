@@ -68,9 +68,9 @@ async function initChat() {
 
   chatId = chat.ID;
 
-  // Сохранить chatId в данных компании (для специалистов)
+  // Сохранить chatId в отдельное поле компании
   await B24_API.updateCompany(session.companyId, {
-    COMMENTS: `ChatID: ${chatId}`,
+    [B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID]: String(chatId),
   });
 }
 
@@ -193,7 +193,7 @@ function appendMessage(msg) {
   const fileHtml = msg.fileUrl ? renderFileAttachment(msg.fileUrl, msg.fileName, msg.fileType, msg.fileSize) : '';
 
   div.innerHTML = `
-    ${authorName ? `<div class="message-author">${escapeHtml(authorName)}</div>` : ''}
+    ${authorName ? `<div class="message-author" style="color:${getAuthorColor(authorName, isClient)};">${escapeHtml(authorName)}</div>` : ''}
     <div class="message-text">${escapeHtml(text)}</div>
     ${inlineFileHtml}
     ${fileHtml}
@@ -213,12 +213,12 @@ function renderFileAttachment(url, name, type, size) {
       />
     </div>`;
   }
-  return `<div style="margin-top:6px; display:flex; align-items:center; gap:8px;
-    background:rgba(0,0,0,0.2); border-radius:8px; padding:8px 10px; cursor:pointer;"
+  return `<div style="margin-top:6px; display:flex; align-items:flex-start; gap:8px;
+    background:rgba(0,0,0,0.2); border-radius:8px; padding:8px 10px; cursor:pointer; min-width:0;"
     onclick="window.open('${url}','_blank')">
-    <span style="font-size:18px;">📄</span>
-    <div>
-      <div style="font-size:13px; font-weight:500;">${escapeHtml(name)}</div>
+    <span style="font-size:18px; flex-shrink:0;">📄</span>
+    <div style="min-width:0; overflow:hidden;">
+      <div style="font-size:13px; font-weight:500; word-break:break-all; overflow-wrap:break-word;">${escapeHtml(name)}</div>
       ${size ? `<div style="font-size:11px; opacity:0.7;">${size}</div>` : ''}
     </div>
   </div>`;
@@ -333,7 +333,8 @@ async function uploadAndSendFile(file) {
     appendMessage({
       id: msgResult,
       author_id: 'client',
-      text: `[${session.name}]: ${isImage ? '🖼' : '📎'} ${file.name} (${fileSize}) — ${fileUrl}`,
+      // Текст без URL — превью рендерится через fileUrl
+      text: `[${session.name}]: ${isImage ? '🖼' : '📎'} ${file.name} (${fileSize})`,
       date: new Date().toISOString(),
       fileUrl,
       fileName: file.name,
@@ -395,6 +396,28 @@ function updateSubscriptionBadge() {
 }
 
 // ─── UTILS ──────────────────────────────────────────────────
+
+// Цвет ника по имени автора
+// Специалист — синий, клиент — уникальный цвет по хешу имени
+function getAuthorColor(authorName, isClient) {
+  if (!isClient) return '#0ea5e9'; // Специалист — синий
+
+  // Для клиентов — детерминированный цвет по имени (исключены зелёный и синий)
+  const colors = [
+    '#f87171', // красный
+    '#fb923c', // оранжевый
+    '#fbbf24', // жёлтый
+    '#22d3ee', // голубой
+    '#a78bfa', // фиолетовый
+    '#f472b6', // розовый
+    '#e879f9', // пурпурный
+  ];
+  let hash = 0;
+  for (let i = 0; i < authorName.length; i++) {
+    hash = authorName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
 
 function scrollToBottom() {
   const container = document.getElementById('chatMessages');

@@ -6,7 +6,10 @@
 const B24_API = {
 
   // Базовый запрос к REST API через прокси
-  async call(method, params = {}) {
+  async call(method, params = {}, retryCount = 0) {
+    const MAX_RETRIES = 3; // Максимум 3 попытки
+    const RETRY_DELAY = 1000; // Начальная задержка 1 секунда
+    
     let url;
     let body;
 
@@ -32,18 +35,69 @@ const B24_API = {
       });
       const data = await response.json();
       if (data.error) {
-        if (data.error === 'QUERY_LIMIT_EXCEEDED') {
-          await new Promise(r => setTimeout(r, 2000));
-          return null;
+        // Обработка истёкшего токена
+        if ((data.error === 'EXPIRED_TOKEN' || data.error === 'expired_token') && retryCount === 0) {
+          console.warn('Token expired, refreshing...');
+          const refreshed = await this.refreshToken();
+          if (refreshed) {
+            console.log('Token refreshed, retrying request...');
+            return await this.call(method, params, retryCount + 1);
+          } else {
+            console.error('Failed to refresh token');
+            return null;
+          }
         }
+        
+        // Обработка превышения лимита запросов
+        if (data.error === 'QUERY_LIMIT_EXCEEDED') {
+          if (retryCount < MAX_RETRIES) {
+            const delay = RETRY_DELAY * Math.pow(2, retryCount); // Экспоненциальная задержка
+            console.warn(`Query limit exceeded, retrying in ${delay}ms... (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+            await new Promise(r => setTimeout(r, delay));
+            return await this.call(method, params, retryCount + 1);
+          } else {
+            console.error('Query limit exceeded, max retries reached');
+            return null;
+          }
+        }
+        
         console.error(`B24 API error [${method}]:`, data.error, data.error_description);
         return null;
       }
       return data.result;
     } catch (err) {
-      console.error(`B24 API fetch error [${method}]:`, err);
-      return null;
+      // Повтор при сетевых ошибках
+      if (retryCount < MAX_RETRIES) {
+        const delay = RETRY_DELAY * Math.pow(2, retryCount); // Экспоненциальная задержка: 1s, 2s, 4s
+        console.warn(`Network error [${method}], retrying in ${delay}ms... (attempt ${retryCount + 1}/${MAX_RETRIES})`, err.message);
+        await new Promise(r => setTimeout(r, delay));
+        return await this.call(method, params, retryCount + 1);
+      } else {
+        console.error(`B24 API fetch error [${method}] - max retries reached:`, err);
+        return null;
+      }
     }
+  },
+
+  // Обновить токен доступа
+  async refreshToken() {
+    if (typeof BX24 === 'undefined' || !BX24.refreshAuth) {
+      console.error('BX24.refreshAuth not available');
+      return false;
+    }
+
+    return new Promise((resolve) => {
+      BX24.refreshAuth((auth) => {
+        if (auth && auth.access_token) {
+          B24_CONFIG.AUTH_TOKEN = auth.access_token;
+          console.log('Token refreshed successfully');
+          resolve(true);
+        } else {
+          console.error('Failed to refresh token');
+          resolve(false);
+        }
+      });
+    });
   },
 
   // ─── АВТОРИЗАЦИЯ ────────────────────────────────────────────
@@ -70,17 +124,24 @@ const B24_API = {
 
   // Получить или создать групповой чат для компании
   async getOrCreateCompanyChat(companyId, companyName) {
-    // Сначала проверяем — есть ли уже сохранённый ChatID в комментариях компании
     const companyData = await this.getCompany(companyId);
-    if (companyData && companyData.COMMENTS) {
-      const match = companyData.COMMENTS.match(/ChatID:\s*(\d+)/);
-      if (match) {
-        console.log('[getOrCreateCompanyChat] found existing chatId:', match[1]);
-        return { ID: parseInt(match[1]) };
+    if (companyData) {
+      const existingChatId = companyData[B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID];
+      if (existingChatId) {
+        const test = await this.call('im.dialog.messages.get', {
+          DIALOG_ID: `chat${existingChatId}`,
+          LIMIT: 1,
+        });
+        if (test !== null) {
+          return { ID: parseInt(existingChatId) };
+        }
+        // Чат удалён — очистить поле и создать новый
+        await this.updateCompany(companyId, {
+          [B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID]: '',
+        });
       }
     }
 
-    // Чата нет — создаём новый
     const chatTitle = `Компания: ${companyName}`;
     const newChatId = await this.call('im.chat.add', {
       TYPE: 'CHAT',
@@ -89,13 +150,57 @@ const B24_API = {
       MESSAGE: 'Чат создан. Здесь будут все обращения от клиента.',
     });
 
-    console.log('[getOrCreateCompanyChat] created new chat:', newChatId);
+    if (newChatId && companyData) {
+      // Добавить специалиста если назначен
+      const specialistId = companyData[B24_CONFIG.CRM_FIELDS.COMPANY.SPECIALIST];
+      if (specialistId) {
+        await this.addUserToChat(newChatId, specialistId);
+      }
+      
+      // Добавить всех руководителей отдела "Сопровождение"
+      try {
+        const departments = await this.call('department.get', {});
+        if (departments && departments.length > 0) {
+          const dept = departments.find(d => d.NAME === 'Сопровождение');
+          if (dept) {
+            const deptDetails = await this.call('department.get', { ID: dept.ID });
+            if (deptDetails && deptDetails.length > 0) {
+              const headId = deptDetails[0].UF_HEAD;
+              if (headId && String(headId) !== String(specialistId)) {
+                await this.addUserToChat(newChatId, headId);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Ошибка добавления руководителя в чат:', e);
+      }
+    }
+
     return newChatId ? { ID: newChatId } : null;
   },
 
   // Получить историю сообщений чата
-  // Всегда запрашиваем последние 100 сообщений и фильтруем новые по ID на клиенте
+  // Сначала пробуем KV через Worker, fallback к Bitrix24 API
   async getChatMessages(chatId) {
+    try {
+      const resp = await fetch(B24_CONFIG.PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'getMessages', chatId }),
+      });
+      const data = await resp.json();
+      if (data.ok && data.messages) {
+        const count = Object.keys(data.messages).length;
+        if (count > 0) {
+          return { messages: data.messages };
+        }
+      }
+    } catch (e) {
+      console.warn('[getChatMessages] KV error, falling back:', e);
+    }
+
+    // Fallback: прямой запрос к Bitrix24
     return await this.call('im.dialog.messages.get', {
       DIALOG_ID: `chat${chatId}`,
       LIMIT: 100,
@@ -117,6 +222,14 @@ const B24_API = {
     return await this.call('im.chat.user.add', {
       CHAT_ID: chatId,
       USERS: [userId],
+    });
+  },
+
+  // Удалить пользователя из чата
+  async removeUserFromChat(chatId, userId) {
+    return await this.call('im.chat.user.delete', {
+      CHAT_ID: chatId,
+      USER_ID: userId,
     });
   },
 
@@ -173,7 +286,8 @@ const B24_API = {
   // Загружает все страницы если компаний больше 50
   async getCompanies(filter = {}) {
     const select = [
-      'ID', 'TITLE', 'COMMENTS',
+      'ID', 'TITLE',
+      B24_CONFIG.CRM_FIELDS.COMPANY.CHAT_ID,
       B24_CONFIG.CRM_FIELDS.COMPANY.SUB_START,
       B24_CONFIG.CRM_FIELDS.COMPANY.SUB_END,
       B24_CONFIG.CRM_FIELDS.COMPANY.SUB_TYPE,
