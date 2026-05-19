@@ -17,6 +17,8 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* ─── CONTAINER ─── */
@@ -111,37 +113,14 @@ body {
 }
 
 /* ─── CHAT CONTAINER ─── */
-.chat-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px;
-  overflow: hidden;
-  margin: 20px;
-  max-height: calc(100vh - 120px);
-}
-
 .chat-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
   background: #13131f;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 14px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-
-.chat-header h2 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #f1f5f9;
-}
-
-.chat-header p {
-  font-size: 12px;
-  color: #64748b;
-  margin-top: 4px;
+  flex-shrink: 0;
 }
 
 .header-left {
@@ -206,6 +185,7 @@ body {
   padding: 14px 16px;
   border-top: 1px solid rgba(255,255,255,0.08);
   background: #13131f;
+  flex-shrink: 0;
 }
 
 .chat-input-container {
@@ -634,4 +614,45 @@ body {
   .message {
     max-width: 85%;
   }
+}
+
+/* ─── MESSAGE FILE ATTACHMENTS ─── */
+.message-file-inline {
+  margin-top: 6px;
+}
+
+.message-file-inline img {
+  max-width: 220px;
+  max-height: 180px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: block;
+}
+
+.message-file-inline img:hover {
+  opacity: 0.9;
+}
+
+.message-file-download {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.message-file-download:hover {
+  background: rgba(0,0,0,0.3);
+}
+
+.message-file-download .file-icon {
+  font-size: 18px;
+}
+
+.message-file-download .file-label {
+  font-size: 13px;
 }

@@ -178,14 +178,10 @@ function appendMessage(msg) {
     text = text.replace(urlMatch[0], '').trim();
     const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
     inlineFileHtml = isImg
-      ? `<div style="margin-top:6px;"><img src="${url}"
-          style="max-width:220px;max-height:180px;border-radius:8px;cursor:pointer;display:block;"
-          onclick="window.open('${url}','_blank')" onerror="this.style.display='none'"/></div>`
-      : `<div style="margin-top:6px;display:flex;align-items:center;gap:8px;
-          background:rgba(0,0,0,0.2);border-radius:8px;padding:8px 10px;cursor:pointer;"
-          onclick="window.open('${url}','_blank')">
-          <span style="font-size:18px;">📄</span>
-          <div style="font-size:13px;">Скачать файл</div>
+      ? `<div class="message-file-inline"><img src="${url}" onclick="window.open('${url}','_blank')" onerror="this.style.display='none'"/></div>`
+      : `<div class="message-file-download" onclick="window.open('${url}','_blank')">
+          <span class="file-icon">📄</span>
+          <div class="file-label">Скачать файл</div>
         </div>`;
   }
 
@@ -207,18 +203,15 @@ function renderFileAttachment(url, name, type, size) {
   if (type && type.startsWith('image/')) {
     return `<div style="margin-top:6px;">
       <img src="${url}" alt="${escapeHtml(name)}"
-        style="max-width:220px; max-height:180px; border-radius:8px; cursor:pointer; display:block;"
         onclick="window.open('${url}','_blank')"
         onerror="this.style.display='none'"
       />
     </div>`;
   }
-  return `<div style="margin-top:6px; display:flex; align-items:flex-start; gap:8px;
-    background:rgba(0,0,0,0.2); border-radius:8px; padding:8px 10px; cursor:pointer; min-width:0;"
-    onclick="window.open('${url}','_blank')">
-    <span style="font-size:18px; flex-shrink:0;">📄</span>
+  return `<div class="message-file-download" onclick="window.open('${url}','_blank')">
+    <span class="file-icon">📄</span>
     <div style="min-width:0; overflow:hidden;">
-      <div style="font-size:13px; font-weight:500; word-break:break-all; overflow-wrap:break-word;">${escapeHtml(name)}</div>
+      <div class="file-label" style="font-weight:500; word-break:break-all; overflow-wrap:break-word;">${escapeHtml(name)}</div>
       ${size ? `<div style="font-size:11px; opacity:0.7;">${size}</div>` : ''}
     </div>
   </div>`;
