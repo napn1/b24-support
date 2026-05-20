@@ -163,25 +163,13 @@ const B24_API = {
         if (departments && departments.length > 0) {
           const dept = departments.find(d => d.NAME === 'Сопровождение');
           if (dept) {
-            const deptDetails = await this.call('department.get', { ID: dept.ID });
-            const headIds = [];
-
-            if (deptDetails && deptDetails.length > 0 && deptDetails[0].UF_HEAD) {
-              headIds.push(String(deptDetails[0].UF_HEAD));
-            }
-
-            // Все сотрудники с флагом UF_DEPARTMENT_HEAD
-            const deptUsers = await this.call('user.get', {
-              filter: { UF_DEPARTMENT: dept.ID },
-              select: ['ID', 'UF_DEPARTMENT_HEAD'],
+            const managersResult = await this.call('im.department.managers.get', {
+              ID: [dept.ID],
+              USER_DATA: 'N',
             });
-            if (deptUsers) {
-              deptUsers.forEach(u => {
-                if (u.UF_DEPARTMENT_HEAD && !headIds.includes(String(u.ID))) {
-                  headIds.push(String(u.ID));
-                }
-              });
-            }
+            const headIds = managersResult && managersResult[dept.ID]
+              ? managersResult[dept.ID].map(id => String(id))
+              : [];
 
             for (const headId of headIds) {
               if (String(headId) !== String(specialistId)) {
