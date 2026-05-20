@@ -164,16 +164,33 @@ const B24_API = {
           const dept = departments.find(d => d.NAME === 'Сопровождение');
           if (dept) {
             const deptDetails = await this.call('department.get', { ID: dept.ID });
-            if (deptDetails && deptDetails.length > 0) {
-              const headId = deptDetails[0].UF_HEAD;
-              if (headId && String(headId) !== String(specialistId)) {
+            const headIds = [];
+
+            // UF_HEAD — официальный руководитель
+            if (deptDetails && deptDetails.length > 0 && deptDetails[0].UF_HEAD) {
+              headIds.push(String(deptDetails[0].UF_HEAD));
+            }
+
+            // Все сотрудники отдела с правами администратора
+            const adminUsers = await this.call('user.get', {
+              filter: { UF_DEPARTMENT: dept.ID, IS_ADMIN: 'Y' },
+              select: ['ID'],
+            });
+            if (adminUsers) {
+              adminUsers.forEach(u => {
+                if (!headIds.includes(String(u.ID))) headIds.push(String(u.ID));
+              });
+            }
+
+            for (const headId of headIds) {
+              if (String(headId) !== String(specialistId)) {
                 await this.addUserToChat(newChatId, headId);
               }
             }
           }
         }
       } catch (e) {
-        console.error('Ошибка добавления руководителя в чат:', e);
+        console.error('Ошибка добавления руководителей в чат:', e);
       }
     }
 
