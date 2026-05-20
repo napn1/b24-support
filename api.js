@@ -222,6 +222,7 @@ const B24_API = {
     return await this.call('im.chat.user.add', {
       CHAT_ID: chatId,
       USERS: [userId],
+      HIDE_HISTORY: 'N',
     });
   },
 
