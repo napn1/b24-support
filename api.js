@@ -166,19 +166,20 @@ const B24_API = {
             const deptDetails = await this.call('department.get', { ID: dept.ID });
             const headIds = [];
 
-            // UF_HEAD — официальный руководитель
             if (deptDetails && deptDetails.length > 0 && deptDetails[0].UF_HEAD) {
               headIds.push(String(deptDetails[0].UF_HEAD));
             }
 
-            // Все сотрудники отдела с правами администратора
-            const adminUsers = await this.call('user.get', {
-              filter: { UF_DEPARTMENT: dept.ID, IS_ADMIN: 'Y' },
-              select: ['ID'],
+            // Все сотрудники с флагом UF_DEPARTMENT_HEAD
+            const deptUsers = await this.call('user.get', {
+              filter: { UF_DEPARTMENT: dept.ID },
+              select: ['ID', 'UF_DEPARTMENT_HEAD'],
             });
-            if (adminUsers) {
-              adminUsers.forEach(u => {
-                if (!headIds.includes(String(u.ID))) headIds.push(String(u.ID));
+            if (deptUsers) {
+              deptUsers.forEach(u => {
+                if (u.UF_DEPARTMENT_HEAD && !headIds.includes(String(u.ID))) {
+                  headIds.push(String(u.ID));
+                }
               });
             }
 
