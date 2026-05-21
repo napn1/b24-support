@@ -172,9 +172,8 @@ body:has(.login-wrap) {
 }
 
 .btn-logout:hover {
-  border-color: rgba(255,255,255,0.15);
-  color: #f1f5f9;
-  background: rgba(255,255,255,0.04);
+      background: rgb(0 212 255 / 15%);
+    color: rgb(0 212 255);
 }
 
 .chat-messages {
@@ -620,6 +619,30 @@ body:has(.login-wrap) {
   .message {
     max-width: 85%;
   }
+}
+
+/* ─── ROLE BADGE ─── */
+.role-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  vertical-align: middle;
+  margin-left: 5px;
+  line-height: 1.6;
+}
+
+.role-badge.specialist {
+  background: rgba(14, 165, 233, 0.15);
+  color: #0ea5e9;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.role-badge.admin {
+  background: rgba(74, 222, 128, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.3);
 }
 
 /* ─── MESSAGE FILE ATTACHMENTS ─── */

@@ -189,7 +189,7 @@ function appendMessage(msg) {
   const fileHtml = msg.fileUrl ? renderFileAttachment(msg.fileUrl, msg.fileName, msg.fileType, msg.fileSize) : '';
 
   div.innerHTML = `
-    ${authorName ? `<div class="message-author" style="color:${getAuthorColor(authorName, isClient)};">${escapeHtml(authorName)}</div>` : ''}
+    ${authorName ? `<div class="message-author" style="color:${getAuthorColor(authorName, isClient)};">${escapeHtml(authorName)}${!isClient ? '<span class="role-badge specialist">Специалист</span>' : ''}</div>` : ''}
     <div class="message-text">${escapeHtml(text)}</div>
     ${inlineFileHtml}
     ${fileHtml}
