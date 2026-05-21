@@ -157,20 +157,27 @@ const B24_API = {
         await this.addUserToChat(newChatId, specialistId);
       }
       
-      // Добавить всех руководителей отдела "Сопровождение"
+      // Добавить всех руководителей отдела "Сопровождение" (по должности "Руководитель ТП")
       try {
         const departments = await this.call('department.get', {});
         if (departments && departments.length > 0) {
           const dept = departments.find(d => d.NAME === 'Сопровождение');
           if (dept) {
-            const managersResult = await this.call('im.department.managers.get', {
-              ID: [dept.ID],
-              USER_DATA: 'N',
+            const deptUsers = await this.call('user.get', {
+              filter: { UF_DEPARTMENT: dept.ID },
+              select: ['ID', 'WORK_POSITION'],
             });
-            const headIds = managersResult && managersResult[dept.ID]
-              ? managersResult[dept.ID].map(id => String(id))
-              : [];
-
+            let headIds = [];
+            if (deptUsers) {
+              deptUsers.forEach(u => {
+                if (u.WORK_POSITION === 'Руководитель ТП') headIds.push(String(u.ID));
+              });
+            }
+            // Fallback на im.department.managers.get
+            if (headIds.length === 0) {
+              const mgr = await this.call('im.department.managers.get', { ID: [dept.ID], USER_DATA: 'N' });
+              if (mgr) headIds = Object.values(mgr).flat().map(id => String(id));
+            }
             for (const headId of headIds) {
               if (String(headId) !== String(specialistId)) {
                 await this.addUserToChat(newChatId, headId);
