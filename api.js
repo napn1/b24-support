@@ -170,7 +170,7 @@ const B24_API = {
             let headIds = [];
             if (deptUsers) {
               deptUsers.forEach(u => {
-                if (u.WORK_POSITION === 'Руководитель ТП') headIds.push(String(u.ID));
+                if (u.WORK_POSITION && u.WORK_POSITION.includes('Руководитель ТП')) headIds.push(String(u.ID));
               });
             }
             // Fallback на im.department.managers.get
